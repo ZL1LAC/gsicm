@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readdir, mkdir, unlink, open } from "node:fs/promises";
@@ -23,7 +24,9 @@ export async function createApp(
 ) {
   const store = new Store(data),
     engine = new Engine(store, root),
-    app = express();
+    app = express(),
+    password = process.env.GSICM_PASSWORD?.trim(),
+    sessionToken = password ? crypto.randomBytes(32).toString("base64url") : "";
   app.use((req, res, next) => {
     const host = req.hostname;
     if (!["127.0.0.1", "localhost", "::1"].includes(host))
@@ -37,6 +40,42 @@ export async function createApp(
     next();
   });
   app.use(express.json({ limit: "128kb" }));
+  const cookie = (req: express.Request, name: string) =>
+    req.headers.cookie
+      ?.split(";")
+      .map((part) => part.trim().split("="))
+      .find(([key]) => key === name)?.[1];
+  const authorized = (req: express.Request) =>
+    !password || cookie(req, "gsicm_session") === sessionToken;
+  app.get("/api/auth", (req, res) =>
+    res.json({ required: !!password, authenticated: authorized(req) }),
+  );
+  app.post("/api/login", (req, res) => {
+    if (!password) return res.json({ ok: true });
+    const attempt = String(req.body?.password ?? "");
+    const expected = Buffer.from(password);
+    const actual = Buffer.from(attempt);
+    const matches =
+      expected.length === actual.length &&
+      crypto.timingSafeEqual(expected, actual);
+    if (!matches) return res.status(401).json({ error: "Incorrect password." });
+    res.cookie("gsicm_session", sessionToken, {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: false,
+      path: "/",
+    });
+    res.json({ ok: true });
+  });
+  app.post("/api/logout", (_req, res) => {
+    res.clearCookie("gsicm_session", { path: "/" });
+    res.json({ ok: true });
+  });
+  app.use("/api", (req, res, next) =>
+    authorized(req)
+      ? next()
+      : res.status(401).json({ error: "Password login required." }),
+  );
   const resources = path.join(root, "bin", "Resources");
   const underlays = (await readdir(resources)).filter((f) =>
     /^world\..*\.(jpg|png)$/.test(f),

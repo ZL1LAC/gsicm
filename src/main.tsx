@@ -17,6 +17,10 @@ type State = {
   underlays: string[];
   activeJob?: string;
 };
+type AuthState = {
+  required: boolean;
+  authenticated: boolean;
+};
 async function api(url: string, method = "GET", body?: unknown) {
   const response = await fetch("/api" + url, {
     method,
@@ -44,6 +48,8 @@ function Field({
   );
 }
 function App() {
+  const [auth, setAuth] = useState<AuthState>();
+  const [password, setPassword] = useState("");
   const [state, setState] = useState<State>();
   const [page, setPage] = useState("Overview");
   const [error, setError] = useState("");
@@ -53,7 +59,12 @@ function App() {
   const [settings, setSettings] = useState<Settings>();
   const [job, setJob] = useState<Job>();
   const [busy, setBusy] = useState(false);
-  const refresh = async () => setState(await api("/state"));
+  const refreshAuth = async () => setAuth(await api("/auth"));
+  const refresh = async () => {
+    const authState = await api("/auth");
+    setAuth(authState);
+    if (authState.authenticated) setState(await api("/state"));
+  };
   useEffect(() => {
     void refresh().catch((e) => setError(e.message));
     const timer = setInterval(
@@ -62,6 +73,20 @@ function App() {
     );
     return () => clearInterval(timer);
   }, []);
+  const login = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api("/login", "POST", { password });
+      setPassword("");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const action = async (fn: () => Promise<unknown>, message = "Saved") => {
     setBusy(true);
     setError("");
@@ -76,6 +101,32 @@ function App() {
       setBusy(false);
     }
   };
+  if (auth?.required && !auth.authenticated)
+    return (
+      <main className="login">
+        <form onSubmit={login}>
+          <div className="brand">
+            <span className="orbit">◎</span>
+            <div>
+              GSICM<small>EARTH OBSERVATION</small>
+            </div>
+          </div>
+          <h1>Password required</h1>
+          <Field label="Password">
+            <input
+              autoFocus
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          {error && <p className="login-error">{error}</p>}
+          <button className="primary" disabled={busy || !password}>
+            Log in
+          </button>
+        </form>
+      </main>
+    );
   if (!state)
     return (
       <main>
@@ -621,9 +672,23 @@ function App() {
               Save settings
             </button>
             <p className="muted">
-              Latest successful output only · Server listens on localhost · No
-              account required
+              Latest successful output only · Server listens on localhost ·{" "}
+              {auth?.required ? "Password login enabled" : "No account required"}
             </p>
+            {auth?.required && (
+              <button
+                disabled={busy}
+                onClick={() =>
+                  action(async () => {
+                    await api("/logout", "POST", {});
+                    setState(undefined);
+                    await refreshAuth();
+                  }, "Logged out")
+                }
+              >
+                Log out
+              </button>
+            )}
           </article>
         )}
       </main>

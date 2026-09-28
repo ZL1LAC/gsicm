@@ -344,6 +344,55 @@ test("local API validation, setup blockers and editing invalidates compatibility
     await rm(directory, { recursive: true, force: true });
   }
 });
+test("password login protects API endpoints when configured", async () => {
+  const directory = await temp();
+  const prior = process.env.GSICM_PASSWORD;
+  process.env.GSICM_PASSWORD = "correct horse";
+  const { app, store } = await createApp(process.cwd(), directory);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((r) => server.once("listening", r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
+  try {
+    assert.equal(
+      (await (await fetch(base + "/auth")).json()).authenticated,
+      false,
+    );
+    assert.equal((await fetch(base + "/state")).status, 401);
+    assert.equal(
+      (
+        await fetch(base + "/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: "wrong" }),
+        })
+      ).status,
+      401,
+    );
+    const login = await fetch(base + "/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "correct horse" }),
+    });
+    assert.equal(login.status, 200);
+    const session = login.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(session);
+    assert.equal(
+      (
+        await fetch(base + "/state", {
+          headers: { Cookie: session },
+        })
+      ).status,
+      200,
+    );
+  } finally {
+    if (prior === undefined) delete process.env.GSICM_PASSWORD;
+    else process.env.GSICM_PASSWORD = prior;
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+    store.db.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("scheduler deduplicates intervals, blocks incomplete profiles, and protects an active cache", async () => {
   const directory = await temp(),
     store = new Store(directory),
