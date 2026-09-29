@@ -18,6 +18,25 @@ Press Ctrl+C to stop a foreground server. For a launcher-started server, use `St
 
 For frontend development, run `npm start` and `npx vite` in separate terminals. Vite proxies `/api` to the local backend. `npm run build` checks TypeScript and generates `dist/`.
 
+## Login
+
+Login is optional for the local dashboard. To enable it for launcher starts, run:
+
+```powershell
+.\Set-GSICM-Password.ps1
+.\Stop-GSICM.ps1
+.\Start-GSICM.ps1
+```
+
+The launcher stores the password in a local, git-ignored `.gsicm-password` file and passes it to the server as `GSICM_PASSWORD`. To disable login again, run:
+
+```powershell
+.\Set-GSICM-Password.ps1 -Clear
+.\Stop-GSICM.ps1
+```
+
+For foreground or service-style starts, set `GSICM_PASSWORD` in the process environment before running `npm start`.
+
 ## First run
 
 The five regional source entries are **disabled placeholders**. Public sample feeds inspected so far contain annotations or enhanced colours and are unsuitable for the chosen clean-imagery policy. See [feed verification notes](docs/FEEDS.md). No live global composite is claimed or fabricated.
@@ -35,7 +54,7 @@ Source tests validate decoding, dimensions, and timestamp compatibility. Visual 
 - One compositor at a time. Downloads use temporary files, bounded retries, size limits, and timeouts. Queued/running jobs become interrupted after a restart.
 - Keep only the latest successful output per profile, a two-hour acquisition cache, and seven days of job history/logs. Cache cleanup waits while processing or source testing is active. File cleanup is confined to manager-owned directories.
 - State lives in `data/manager.sqlite`; cache, work files, and outputs live beneath `data/`. Preserve this directory to keep configuration. `GSICM_DATA_DIR` overrides it for isolated instances/tests. `PORT` overrides port 3210.
-- The web server listens on loopback only. This is a single-user local tool, without remote authentication or public deployment support.
+- The web server listens on loopback only. Optional password login is for local dashboard access, not remote/public deployment.
 
 ## API
 

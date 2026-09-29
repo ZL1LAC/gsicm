@@ -4,5 +4,6 @@ data/
 test-results/
 playwright-report/
 *.log
+.gsicm-password
 .venv-gk2a/
 __pycache__/

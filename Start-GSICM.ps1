@@ -3,6 +3,11 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Install Node.js 24 or newer, then run this launcher again.' }
 if ([int]((& node --version).TrimStart('v').Split('.')[0]) -lt 24) { throw 'Node.js 24 or newer is required.' }
+$passwordFile = Join-Path $PSScriptRoot '.gsicm-password'
+if (-not $env:GSICM_PASSWORD -and (Test-Path -LiteralPath $passwordFile)) {
+  $env:GSICM_PASSWORD = (Get-Content -LiteralPath $passwordFile -Raw).Trim()
+  if (-not $env:GSICM_PASSWORD) { throw '.gsicm-password is empty. Run Set-GSICM-Password.ps1 again or delete the file.' }
+}
 if (-not (Test-Path -LiteralPath 'node_modules')) { & npm.cmd ci; if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' } }
 & npm.cmd run build
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
