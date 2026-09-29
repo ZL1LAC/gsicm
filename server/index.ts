@@ -231,6 +231,35 @@ export async function createApp(
           }),
         );
     }
+    if (!store.get("sources", "electro-l4"))
+      store.put(
+        "sources",
+        "electro-l4",
+        sourceSchema.parse({
+          id: "electro-l4",
+          name: "Electro-L No.4",
+          satellite: "Electro-L N4",
+          region: "Western Pacific",
+          longitude: 165.8,
+          enabled: false,
+          product: "elektro-rgb",
+          transport: "ftp",
+          location: "ftp://ntsomz.gptl.ru:2121/ELECTRO_L_4/",
+          username: "electro",
+          password: "electro",
+          expectedWidth: 11136,
+          expectedHeight: 11136,
+          crop: [0.012703, 0.012703, 0.012703, 0.012703],
+          invert: false,
+          brightness: 1,
+          cadenceMinutes: 30,
+          pattern: "\\d{6}_\\d{4}_original_RGB_VIS_IR\\.jpg$",
+          timestampRegex: "(\\d{6}_\\d{4})",
+          timestampFormat: "elektro",
+          attribution: "NTSOMZ Elektro-L FTP RGB VIS/IR",
+          blocker: "Test RGB full-disc JPEG; archive times are Moscow UTC+3.",
+        }),
+      );
     res.json({ installed: presets.map(([id]) => id) });
   });
   const locked = () =>
@@ -303,13 +332,23 @@ export async function createApp(
         source,
         requestedTarget,
         30,
-        AbortSignal.timeout(source.product === "elektro-l" ? 900000 : 180000),
+        AbortSignal.timeout(
+          source.product === "elektro-l" || source.product === "elektro-rgb"
+            ? 900000
+            : 180000,
+        ),
       );
       const validation = {
         at: new Date().toISOString(),
         compatible: source.cleanConfirmed,
         message: source.cleanConfirmed
-          ? `Image validated at ${image.observationTime}. ${source.product === "elektro-l" ? "Full-resolution MSU-GS channel 9; Moscow filename converted to UTC." : "Dimensions and observation timestamp match. Clean imagery confirmed by operator."}`
+          ? `Image validated at ${image.observationTime}. ${
+              source.product === "elektro-l"
+                ? "Full-resolution MSU-GS channel 9; Moscow filename converted to UTC."
+                : source.product === "elektro-rgb"
+                  ? "Full-disc RGB VIS/IR JPEG; Moscow filename converted to UTC."
+                  : "Dimensions and observation timestamp match. Clean imagery confirmed by operator."
+            }`
           : "Image decoded. Inspect preview, verify full-disc geometry and absence of labels/coastlines, then confirm and retest.",
         imageId: image.id,
       };

@@ -294,7 +294,7 @@ test("local API validation, setup blockers and editing invalidates compatibility
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
   try {
     const state = await (await fetch(base + "/state")).json();
-    assert.equal(state.sources.length, 5);
+    assert.equal(state.sources.length, 0);
     assert.equal(state.profiles.length, 2);
     assert.equal(state.outputs.length, 0);
     assert.equal(

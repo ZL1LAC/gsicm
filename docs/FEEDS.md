@@ -33,6 +33,8 @@ Bundled IR settings: N2 longitude -14.5, brightness 1.2; N3 longitude 76, bright
 
 Both passed live FTP acquisition and real Sanchez map rendering using scripts/test-elektro-live.ts. Outputs and logs are in data/elektro-live-verification. N2 has recent data. At verification, the N3 September directory contained days 01-10 only. N3 remains excluded from today's main stitch; use Sources > Test archive time for its historical data.
 
+Elektro-L N4 publishes 11136 x 11136 full-disc RGB VIS/IR JPEG composites rather than the N2/N3 channel ZIP archives. The manager treats it as `elektro-rgb`, downloads `*_original_RGB_VIS_IR.jpg`, stages an Electro-parser filename for Sanchez, and uses longitude 165.8, brightness 1, invert false, and the same crop. Live FTP acquisition and Sanchez map rendering passed using `npm run test:elektro4`; outputs are in `data/elektro4-live-verification`.
+
 Allow up to 300 MB and 300 seconds for archives. The extractor uses Python's standard library in the installed decoder environment, reads only the exact channel-9 member, checks CRC and size, and never extracts archive paths.
 
 1. Obtain an account-free rendered full-disc IR product with known observation timestamps and satellite geometry.

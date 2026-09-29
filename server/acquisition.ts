@@ -210,7 +210,7 @@ export async function discover(
     }
   } else if (source.transport === "ftp" || source.transport === "ftps") {
     await ftp(source, settings, signal, async (client, url) => {
-      if (source.product === "elektro-l") {
+      if (source.product === "elektro-l" || source.product === "elektro-rgb") {
         const base = decodeURIComponent(url.pathname).replace(/\/$/, "");
         for (const directory of elektroDirectories(base, target, tolerance)) {
           signal.throwIfAborted();
@@ -413,9 +413,11 @@ export async function acquire(
   signal: AbortSignal,
   log: (message: string) => void = () => {},
 ): Promise<AcquiredImage> {
-  if (source.product === "elektro-l") {
-    const { acquireElektro } = await import("./elektro.js");
-    return acquireElektro(store, source, target, tolerance, signal, log);
+  if (source.product === "elektro-l" || source.product === "elektro-rgb") {
+    const { acquireElektro, acquireElektroRgb } = await import("./elektro.js");
+    return source.product === "elektro-rgb"
+      ? acquireElektroRgb(store, source, target, tolerance, signal, log)
+      : acquireElektro(store, source, target, tolerance, signal, log);
   }
   if (source.product && source.product !== "raster") {
     const { acquireRaw } = await import("./raw.js");

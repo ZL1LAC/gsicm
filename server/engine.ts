@@ -243,10 +243,13 @@ export class Engine {
             .replace(/\.\d+Z$/, "Z");
         const directory = path.join(stage, "inputs", s.id);
         await mkdir(directory, { recursive: true });
-        if (s.product === "elektro-l") {
-          const filename = path.posix
-            .basename(img.remoteKey)
-            .replace(/\.zip$/i, "_9.jpg");
+        if (s.product === "elektro-l" || s.product === "elektro-rgb") {
+          const filename =
+            s.product === "elektro-rgb"
+              ? path.posix
+                  .basename(img.remoteKey)
+                  .replace(/_(?:original_)?RGB(?:_VIS_IR)?\.jpg$/i, "_9.jpg")
+              : path.posix.basename(img.remoteKey).replace(/\.zip$/i, "_9.jpg");
           await copyFile(img.path, path.join(directory, filename));
           definitions.push({
             DisplayName: s.satellite,
@@ -254,7 +257,7 @@ export class Engine {
             FilenameParser: "Electro",
             Longitude: s.longitude,
             Brightness: s.brightness,
-            Invert: true,
+            Invert: s.invert,
             Crop: s.crop,
           });
         } else {

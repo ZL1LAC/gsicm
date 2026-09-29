@@ -101,3 +101,78 @@ export async function acquireElektro(
   }
   throw new Error(`${source.name}: ${last}`);
 }
+
+export async function acquireElektroRgb(
+  store: Store,
+  source: Source,
+  target: Date,
+  tolerance: number,
+  signal: AbortSignal,
+  log: (s: string) => void,
+): Promise<AcquiredImage> {
+  const cached = store
+    .images()
+    .filter(
+      (i) =>
+        i.sourceId === source.id &&
+        i.remoteKey.endsWith(".jpg") &&
+        Math.abs(+new Date(i.observationTime) - +target) <= tolerance * 60000,
+    );
+  const available = await retry(
+    () => discover(source, target, tolerance, store.settings(), signal),
+    signal,
+  );
+  if (!available.length)
+    throw new Error(
+      `${source.name}: no RGB JPEG within ±${tolerance} minutes of ${target.toISOString()} (FTP folders use Moscow UTC+3).`,
+    );
+  let last = "No usable RGB JPEG";
+  for (const candidate of available) {
+    const hit = cached.find((i) => i.remoteKey === candidate.key);
+    if (hit) {
+      try {
+        await inspectImage(hit.path, source);
+        return hit;
+      } catch {
+        store.delete("images", hit.id);
+      }
+    }
+    const id = randomUUID(),
+      dir = path.join(store.root, "work", `electro-rgb-${id}`);
+    await mkdir(dir, { recursive: true });
+    try {
+      const downloaded = path.join(dir, "observation.jpg");
+      log(
+        `Downloading Elektro RGB full-disc ${candidate.key}; observation ${candidate.observationTime}\n`,
+      );
+      await download(source, candidate, downloaded, store.settings(), signal);
+      const dimensions = await inspectImage(downloaded, source);
+      const hash = createHash("sha256")
+        .update(await readFile(downloaded))
+        .digest("hex");
+      await mkdir(path.join(store.root, "cache"), { recursive: true });
+      const final = path.join(store.root, "cache", `${id}.jpg`);
+      signal.throwIfAborted();
+      await rename(downloaded, final);
+      const image: AcquiredImage = {
+        id,
+        sourceId: source.id,
+        observationTime: candidate.observationTime,
+        acquiredAt: new Date().toISOString(),
+        path: final,
+        ...dimensions,
+        hash,
+        remoteKey: candidate.key,
+      };
+      store.put("images", id, image);
+      return image;
+    } catch (error) {
+      signal.throwIfAborted();
+      last = String(error);
+      log(`${last}\n`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+  throw new Error(`${source.name}: ${last}`);
+}

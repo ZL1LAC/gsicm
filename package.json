@@ -12,6 +12,7 @@
     "start": "tsx server/index.ts",
     "test": "tsx --test tests/*.test.ts",
     "smoke": "tsx tests/smoke.ts",
+    "test:elektro4": "tsx scripts/test-elektro4-live.ts",
     "test:ui": "tsx tests/ui.ts",
     "format": "prettier --write server shared src tests vite.config.ts"
   },

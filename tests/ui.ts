@@ -81,14 +81,6 @@ try {
     has: page.getByRole("heading", { name: "Global map", exact: true }),
   });
   await map.getByRole("button", { name: "Edit profile" }).click();
-  for (const name of [
-    "GOES East",
-    "GOES West",
-    "Himawari",
-    "Meteosat",
-    "Indian Ocean",
-  ])
-    await page.getByRole("dialog").getByLabel(name, { exact: true }).uncheck();
   await page
     .getByRole("dialog")
     .getByLabel("Synthetic browser fixture", { exact: true })

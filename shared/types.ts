@@ -8,7 +8,14 @@ export const sourceSchema = z.object({
   region: z.string().max(100),
   enabled: z.boolean(),
   product: z
-    .enum(["raster", "goes-abi", "gk2a-ami", "himawari-ahi", "elektro-l"])
+    .enum([
+      "raster",
+      "goes-abi",
+      "gk2a-ami",
+      "himawari-ahi",
+      "elektro-l",
+      "elektro-rgb",
+    ])
     .default("raster"),
   transport: z.enum(["http", "ftp", "ftps", "s3"]),
   username: z.string().max(200).default(""),

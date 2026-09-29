@@ -33,6 +33,7 @@ export class Store {
     if (!this.get("settings", "main"))
       this.put("settings", "main", settingsSchema.parse({}));
     if (!this.get("meta", "seeded")) this.seed();
+    this.removeObsoletePlaceholders();
   }
   get<T>(kind: string, id: string): T | undefined {
     const row = this.db
@@ -70,32 +71,34 @@ export class Store {
   outputs() {
     return this.list<PublishedOutput>("outputs");
   }
+  removeObsoletePlaceholders() {
+    const obsoleteIds = new Set([
+      "goes-east",
+      "goes-west",
+      "himawari",
+      "meteosat",
+      "iodc",
+    ]);
+    for (const source of this.sources()) {
+      if (
+        obsoleteIds.has(source.id) &&
+        !source.enabled &&
+        !source.location &&
+        !source.bucket
+      )
+        this.delete("sources", source.id);
+    }
+    for (const profile of this.profiles()) {
+      const sourceIds = profile.sourceIds.filter((id) => !obsoleteIds.has(id));
+      if (sourceIds.length !== profile.sourceIds.length)
+        this.put(
+          "profiles",
+          profile.id,
+          profileSchema.parse({ ...profile, sourceIds }),
+        );
+    }
+  }
   seed() {
-    const regions = [
-      ["goes-east", "GOES East", "Americas east", -75.2],
-      ["goes-west", "GOES West", "Americas west", -137],
-      ["himawari", "Himawari", "Asia-Pacific", 140.7],
-      ["meteosat", "Meteosat", "Europe / Africa", 0],
-      ["iodc", "Indian Ocean", "Indian Ocean", 45.5],
-    ] as const;
-    for (const [id, name, region, longitude] of regions)
-      this.put(
-        "sources",
-        id,
-        sourceSchema.parse({
-          id,
-          name,
-          satellite: name,
-          region,
-          longitude,
-          enabled: false,
-          transport: "http",
-          location: "",
-          attribution: "",
-          blocker:
-            "No clean, timestamped full-disc feed has been verified. Configure and test a compatible source before enabling.",
-        }),
-      );
     for (const projection of ["map", "globe"] as const)
       this.put(
         "profiles",
@@ -104,7 +107,7 @@ export class Store {
           id: projection,
           name: projection === "map" ? "Global map" : "Pacific globe",
           enabled: false,
-          sourceIds: regions.map((r) => r[0]),
+          sourceIds: [],
           projection,
           underlay: "world.200412.3x21600x10800.jpg",
         }),
