@@ -11,7 +11,7 @@ import {
   type AcquiredImage,
 } from "../shared/types.js";
 
-test("caption uses job times, escapes names, and preserves image below white band", async () => {
+test("caption uses job times, escapes names, and preserves image below broadcast band", async () => {
   const source = sourceSchema.parse({
     id: "one",
     name: "One",
@@ -50,7 +50,7 @@ test("caption uses job times, escapes names, and preserves image below white ban
   ]);
   assert.match(band.svg, /&lt;map&gt;/);
   assert.match(band.svg, /&amp;/);
-  assert.match(band.svg, /#cc0000/);
+  assert.match(band.svg, /#ffb86b/);
   assert.match(band.svg, /20:20:00/);
   assert.match(band.svg, /20:10:20/);
   assert.doesNotMatch(band.svg, /Placeholder/);
@@ -87,7 +87,7 @@ test("caption uses job times, escapes names, and preserves image below white ban
       .removeAlpha()
       .raw()
       .toBuffer();
-    assert.deepEqual([...corner], [255, 255, 255]);
+    assert.deepEqual([...corner], [17, 25, 35]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

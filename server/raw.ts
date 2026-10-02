@@ -11,13 +11,17 @@ import { runProcess } from "./engine.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const decoderPython =
   process.env.GSICM_PYTHON ||
-  path.join(root, ".venv-gk2a", "Scripts", "python.exe");
+  path.join(
+    root,
+    ".venv-gk2a",
+    process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+  );
 export function decoderStatus() {
   return {
     ready: existsSync(decoderPython),
     message: existsSync(decoderPython)
       ? "Satellite decoder installed"
-      : "Run Setup-Decoders.ps1 before testing raw sources.",
+      : "Run Setup-Decoders.ps1 on Windows or install .venv-gk2a on Linux before testing raw sources.",
   };
 }
 export function completeScans(items: Candidate[], product: Source["product"]) {

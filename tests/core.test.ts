@@ -240,7 +240,17 @@ test("argument arrays and process cancellation, timeout and failures", async () 
     "2020-01-01T12:00:00.000Z",
   );
   assert.equal(args[0], "reproject");
-  assert.ok(args.includes("--nocrop"));
+  assert.ok(args.includes("-a"));
+  assert.ok(!args.includes("--nocrop"));
+  assert.ok(
+    !sanchezArgs(
+      { ...profile, projection: "globe" },
+      "s",
+      "o",
+      "r",
+      "t",
+    ).includes("-a"),
+  );
   assert.equal(args[args.indexOf("-m") + 1], "1");
   assert.equal(args[args.indexOf("-T") + 1], "2020-01-01T12:00:00");
   assert.ok(
@@ -437,4 +447,33 @@ test("scheduler deduplicates intervals, blocks incomplete profiles, and protects
   await assert.rejects(access(file));
   store.db.close();
   await rm(directory, { recursive: true, force: true });
+});
+
+test("satellite disk profiles require exactly one source and use geostationary rendering", () => {
+  const disk = profileSchema.parse({
+    ...profile,
+    projection: "disk",
+    longitude: -137,
+  });
+  const args = sanchezArgs(
+    disk,
+    "stage",
+    "disk.png",
+    "resources",
+    "2026-09-09T00:00:00.000Z",
+  );
+  assert.equal(args[0], "geostationary");
+  assert.equal(args[args.indexOf("-l") + 1], "-137");
+  assert.equal(args[args.indexOf("-m") + 1], "1");
+  assert.ok(args.includes("-u"));
+  assert.ok(!args.includes("-a"));
+  assert.match(blockers({ ...disk, sourceIds: [] }, [])[0], /exactly one/);
+  assert.match(
+    blockers({ ...disk, sourceIds: ["one", "two"] }, [])[0],
+    /exactly one/,
+  );
+  assert.match(
+    blockers({ ...disk, optionalSourceIds: ["two"] }, [])[0],
+    /exactly one/,
+  );
 });

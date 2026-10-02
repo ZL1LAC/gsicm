@@ -25,6 +25,11 @@ export function targetTime(now = new Date(), minutes = 10) {
   return new Date(Math.floor(+now / step) * step - step);
 }
 export function blockers(profile: Profile, sources: SourceRecord[]) {
+  if (
+    profile.projection === "disk" &&
+    (profile.sourceIds.length !== 1 || (profile.optionalSourceIds ?? []).length)
+  )
+    return ["Select exactly one satellite for a false-color disk."];
   return profile.sourceIds.length
     ? profile.sourceIds.flatMap((id) => {
         const s = sources.find((x) => x.id === id);
@@ -76,9 +81,20 @@ export function sanchezArgs(
     "-n",
     "-f",
   ];
-  if (profile.projection === "map") args.push("--nocrop");
+  if (profile.projection === "map") args.push("-a");
   else args.push("-l", String(profile.longitude), "-h", String(profile.haze));
   return args;
+}
+
+export function sanchezExecutable(projectRoot: string) {
+  return (
+    process.env.GSICM_SANCHEZ?.trim() ||
+    path.join(
+      projectRoot,
+      "bin",
+      process.platform === "win32" ? "Sanchez.exe" : "Sanchez",
+    )
+  );
 }
 
 export async function runProcess(
@@ -197,6 +213,10 @@ export class Engine {
         logs: (job.logs + text).slice(-200000),
       });
   }
+  progress(id: string, stage: NonNullable<Job["stage"]>, message: string) {
+    const job = this.store.get<Job>("jobs", id);
+    if (job) this.store.put("jobs", id, { ...job, stage, message });
+  }
   async drain() {
     if (this.active || this.stopping) return;
     const job = this.store.list<Job>("jobs").find((j) => j.status === "queued");
@@ -210,27 +230,66 @@ export class Engine {
     });
     const stage = path.join(this.store.root, "work", job.id);
     try {
-      const profile = this.store.get<Profile>("profiles", job.profileId)!;
+      let profile = this.store.get<Profile>("profiles", job.profileId)!;
       const sources = this.store.sources();
       const reasons = blockers(profile, sources);
       if (reasons.length) throw new Error(reasons.join("; "));
-      const chosen = profile.sourceIds.map((id) =>
+      const required = profile.sourceIds.map((id) =>
         sources.find((s) => s.id === id)!,
       );
+      const optionalIds = new Set(profile.optionalSourceIds ?? []);
+      const requested = [
+        ...required,
+        ...sources.filter(
+          (s) =>
+            optionalIds.has(s.id) &&
+            !profile.sourceIds.includes(s.id) &&
+            s.enabled &&
+            s.cleanConfirmed,
+        ),
+      ];
+      const chosen: SourceRecord[] = [];
       const images: AcquiredImage[] = [];
-      for (const source of chosen) {
-        this.log(job.id, `Fetching ${source.name}\n`);
-        images.push(
-          await acquire(
+      for (const [index, source] of requested.entries()) {
+        this.progress(
+          job.id,
+          "acquiring",
+          `Fetching ${source.name} (${index + 1} of ${requested.length})`,
+        );
+        this.log(
+          job.id,
+          `Fetching ${source.name}${optionalIds.has(source.id) ? " (optional)" : ""}\n`,
+        );
+        try {
+          const image = await acquire(
             this.store,
             source,
             new Date(job.targetTime),
             profile.toleranceMinutes,
             controller.signal,
             (text) => this.log(job.id, text),
-          ),
-        );
+          );
+          images.push(image);
+          chosen.push(source);
+        } catch (error) {
+          controller.signal.throwIfAborted();
+          if (
+            !optionalIds.has(source.id) ||
+            profile.sourceIds.includes(source.id)
+          )
+            throw error;
+          this.log(
+            job.id,
+            `Skipped optional ${source.name}: ${String(error)}\n`,
+          );
+        }
       }
+      if (profile.projection === "disk")
+        profile = {
+          ...profile,
+          longitude: images[0].geometry?.longitude ?? chosen[0].longitude,
+        };
+      this.progress(job.id, "preparing", "Preparing imagery for composition");
       await mkdir(path.join(stage, "inputs"), { recursive: true });
       const definitions = [];
       const mappings = [];
@@ -286,20 +345,30 @@ export class Engine {
       await writeFile(path.join(stage, "paths.json"), JSON.stringify(mappings));
       const output = path.join(stage, `result.${profile.format}`);
       const args = sanchezArgs(
-        profile,
+        { ...profile, sourceIds: chosen.map((s) => s.id) },
         stage,
         output,
         path.join(this.projectRoot, "bin", "Resources"),
         job.targetTime,
       );
       this.log(job.id, `Sanchez ${args.join(" ")}\n`);
+      this.progress(
+        job.id,
+        "composing",
+        "Stitching satellite imagery together",
+      );
       await runProcess(
-        path.join(this.projectRoot, "bin", "Sanchez.exe"),
+        sanchezExecutable(this.projectRoot),
         args,
         stage,
         controller.signal,
         this.store.settings().processTimeoutMinutes * 60000,
         (text) => this.log(job.id, text),
+      );
+      this.progress(
+        job.id,
+        "publishing",
+        "Adding attribution and publishing your composite",
       );
       const annotated = path.join(stage, `annotated.${profile.format}`);
       await addAttributionOverlay(
@@ -309,7 +378,7 @@ export class Engine {
         job.targetTime,
         chosen,
         images,
-        sources,
+        profile.projection === "disk" ? chosen : sources,
       );
       await rename(annotated, output);
       const dimensions = await inspectImage(output);

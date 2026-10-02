@@ -1,8 +1,10 @@
 # GSICM
 
-A local satellite acquisition and Sanchez composition manager for Windows. React dashboard, TypeScript/Node backend, SQLite persistence, and the bundled `bin/Sanchez.exe`.
+A local satellite acquisition and Sanchez composition manager for Windows. React dashboard, TypeScript/Node backend, SQLite persistence, and a user-provided `bin/Sanchez.exe`.
 
 ## Start
+
+Manually upload the Sanchez distribution into `bin/`, including `Sanchez.exe` and its supporting files and resources. The `bin/` directory is ignored by Git and is not included in GitHub pushes.
 
 Install **Node.js 24 or newer**, then double-click `Start-GSICM.cmd`. The launcher installs locked dependencies if needed, builds the dashboard, starts a hidden local server, and opens **http://127.0.0.1:3210**. Processing continues after the browser closes. It is not installed as a Windows startup service.
 
@@ -68,6 +70,6 @@ npm run smoke
 npm run test:ui
 ```
 
-Unit/integration tests cover HTTP, FTP, certificate-verified FTPS, anonymous paginated S3, timestamps, invalid images, retries, cancellation, recovery, cleanup, and API validation. Smoke tests run the actual bundled Sanchez for both projections against explicitly synthetic full-disc fixtures in temporary storage. Browser tests use an isolated database and synthetic imagery; install Chromium with `npx playwright install chromium` if needed.
+Unit/integration tests cover HTTP, FTP, certificate-verified FTPS, anonymous paginated S3, timestamps, invalid images, retries, cancellation, recovery, cleanup, and API validation. Smoke tests require the manually supplied Sanchez distribution in `bin/` and run it for both projections against explicitly synthetic full-disc fixtures in temporary storage. Browser tests use an isolated database and synthetic imagery; install Chromium with `npx playwright install chromium` if needed.
 
 Raw scientific decoding is supported for the verified public GOES-18/19, GK-2A, and Himawari-9 products. Meteosat Europe/Africa and Indian Ocean coverage remain setup blockers because no clean, account-free, timestamped feed has been verified. Provider credentials, live feed guarantees, polar cloud observations, historical archives, and OS startup integration remain outside this release.

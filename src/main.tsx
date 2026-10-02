@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
   SourceRecord,
@@ -7,7 +7,18 @@ import type {
   Job,
   PublishedOutput,
 } from "../shared/types";
+import { profileSchema } from "../shared/types";
 import "./style.css";
+import { HourPicker } from "./HourPicker";
+import { FileManager } from "./FileManager";
+import { useAutoRefresh } from "./useAutoRefresh";
+// getRandomValues also works when the manager is opened over HTTP on a LAN.
+function newRecordId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
+}
 type State = {
   sources: SourceRecord[];
   profiles: (Profile & { blockers: string[] })[];
@@ -24,6 +35,7 @@ type AuthState = {
 async function api(url: string, method = "GET", body?: unknown) {
   const response = await fetch("/api" + url, {
     method,
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
@@ -58,6 +70,9 @@ function App() {
   const [profile, setProfile] = useState<Profile>();
   const [settings, setSettings] = useState<Settings>();
   const [job, setJob] = useState<Job>();
+  const [hourProfile, setHourProfile] = useState<Profile>();
+  const [trackedJobs, setTrackedJobs] = useState<Job[]>([]);
+  const [expandedStage, setExpandedStage] = useState<string>();
   const [busy, setBusy] = useState(false);
   const refreshAuth = async () => setAuth(await api("/auth"));
   const refresh = async () => {
@@ -65,14 +80,24 @@ function App() {
     setAuth(authState);
     if (authState.authenticated) setState(await api("/state"));
   };
-  useEffect(() => {
-    void refresh().catch((e) => setError(e.message));
-    const timer = setInterval(
-      () => void refresh().catch((e) => setError(e.message)),
-      4000,
-    );
-    return () => clearInterval(timer);
-  }, []);
+  useAutoRefresh(async () => {
+    try {
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  });
+  useAutoRefresh(async () => {
+    if (!job) return;
+    const id = job.id;
+    try {
+      const updated: Job = await api(`/jobs/${id}`);
+      // Closing or switching logs while a request is pending must not reopen them.
+      setJob((current) => (current?.id === id ? updated : current));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, !!job && !!auth?.authenticated);
   const login = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -100,6 +125,18 @@ function App() {
     } finally {
       setBusy(false);
     }
+  };
+  const startComposition = async (profileId: string, targetTime?: string) => {
+    const queued: Job = await api(
+      `/profiles/${profileId}/run`,
+      "POST",
+      targetTime ? { targetTime } : {},
+    );
+    setTrackedJobs((jobs) => [
+      ...jobs.filter((j) => j.id !== queued.id),
+      queued,
+    ]);
+    return queued;
   };
   if (auth?.required && !auth.authenticated)
     return (
@@ -147,7 +184,7 @@ function App() {
           </div>
         </div>
         <nav>
-          {["Overview", "Sources", "Profiles", "Jobs", "Settings"].map(
+          {["Overview", "Sources", "Profiles", "Jobs", "Files", "Settings"].map(
             (name, i) => (
               <button
                 className={page === name ? "selected" : ""}
@@ -157,7 +194,9 @@ function App() {
                 }}
                 key={name}
               >
-                <span aria-hidden="true">{["◈", "◎", "◫", "≡", "⚙"][i]}</span>
+                <span aria-hidden="true">
+                  {["◈", "◎", "◫", "≡", "▤", "⚙"][i]}
+                </span>
                 {name}
               </button>
             ),
@@ -188,6 +227,126 @@ function App() {
             {notice}
           </div>
         )}
+        {[
+          ...state.jobs.filter((j) => ["queued", "running"].includes(j.status)),
+          ...trackedJobs.map(
+            (j) => state.jobs.find((current) => current.id === j.id) ?? j,
+          ),
+        ]
+          .filter(
+            (j, i, jobs) => jobs.findIndex((other) => other.id === j.id) === i,
+          )
+          .map((j) => {
+            const active = ["queued", "running"].includes(j.status);
+            const stages = [
+              "Queued",
+              "Fetch imagery",
+              "Prepare",
+              "Stitch",
+              "Publish",
+            ];
+            const step =
+              j.status === "succeeded"
+                ? 5
+                : j.status === "queued"
+                  ? 0
+                  : { acquiring: 1, preparing: 2, composing: 3, publishing: 4 }[
+                      j.stage ?? "acquiring"
+                    ];
+            const stageDetails = [
+              "The composition is waiting in the manager queue.",
+              "Downloading and validating the latest imagery for each region.",
+              "Normalizing timing, projection, and image properties.",
+              "Combining the prepared frames into one composite.",
+              "Writing the finished composite and making it available below.",
+            ];
+            const progress = j.status === "succeeded" ? 100 : Math.round((step / 5) * 100);
+            const selectedStage = expandedStage?.startsWith(`${j.id}:`)
+              ? Number(expandedStage.split(":")[1])
+              : undefined;
+            return (
+              <section
+                className="composition-progress"
+                key={j.id}
+                aria-label={`${j.profileName} progress`}
+              >
+                <div className="row">
+                  <strong>
+                    {j.profileName} ·{" "}
+                    {active
+                      ? j.status === "queued"
+                        ? "Waiting to start"
+                        : "Creating your composite…"
+                      : j.status === "succeeded"
+                        ? "Composite ready"
+                        : `Composition ${j.status}`}
+                  </strong>
+                  <button onClick={() => setPage("Jobs")}>View jobs</button>
+                </div>
+                <div className="progress-summary">
+                  <p role="status">{j.message}</p>
+                  <strong>{progress}%</strong>
+                </div>
+                <div
+                  className="composition-steps"
+                  aria-label="Composition stages"
+                >
+                  {stages.map((label, i) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className={
+                        i < step
+                          ? "done"
+                          : i === step && active
+                            ? "current"
+                            : ""
+                      }
+                      aria-current={i === step ? "step" : undefined}
+                      aria-expanded={selectedStage === i}
+                      onClick={() =>
+                        setExpandedStage(
+                          selectedStage === i ? undefined : `${j.id}:${i}`,
+                        )
+                      }
+                    >
+                      {i < step ? "✓ " : ""}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {selectedStage !== undefined && (
+                  <div className="stage-detail" role="status">
+                    <span className="stage-detail-dot" />
+                    <div>
+                      <strong>{stages[selectedStage]}</strong>
+                      <p>{stageDetails[selectedStage]}</p>
+                    </div>
+                  </div>
+                )}
+                {active && (
+                  <div
+                    className="activity-track"
+                    role="progressbar"
+                    aria-label={`${j.profileName}: ${j.message}`}
+                  >
+                    <span />
+                  </div>
+                )}
+                {!active && (
+                  <button
+                    onClick={() =>
+                      setTrackedJobs((jobs) =>
+                        jobs.filter((job) => job.id !== j.id),
+                      )
+                    }
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </section>
+            );
+          })}
         {page === "Overview" && (
           <>
             <section className="stats">
@@ -257,7 +416,9 @@ function App() {
                           <b>
                             {p.projection === "map"
                               ? "Global equirectangular map"
-                              : "Virtual satellite globe"}
+                              : p.projection === "disk"
+                                ? "False-color satellite disk"
+                                : "Virtual satellite globe"}
                           </b>
                           <span>Awaiting first complete observation set</span>
                         </div>
@@ -281,8 +442,8 @@ function App() {
                           </p>
                           <details>
                             <summary>
-                              {o.observations.length} required sources included
-                              · {o.width} × {o.height}
+                              {o.observations.length} sources included ·{" "}
+                              {o.width} × {o.height}
                             </summary>
                             {o.observations.map((s) => (
                               <p key={s.sourceId}>
@@ -304,7 +465,7 @@ function App() {
                         disabled={busy || p.blockers.length > 0}
                         onClick={() =>
                           action(
-                            () => api(`/profiles/${p.id}/run`, "POST", {}),
+                            () => startComposition(p.id),
                             "Composition queued",
                           )
                         }
@@ -313,31 +474,9 @@ function App() {
                       </button>
                       <button
                         disabled={busy || p.blockers.length > 0}
-                        onClick={() => {
-                          const value = window.prompt(
-                            "UTC hour (YYYY-MM-DDTHH:00)",
-                          );
-                          if (!value) return;
-                          const target = new Date(`${value}:00Z`);
-                          if (
-                            !Number.isFinite(+target) ||
-                            target.getUTCMinutes() !== 0
-                          ) {
-                            setError(
-                              "Enter a UTC hour such as 2026-09-28T03:00",
-                            );
-                            return;
-                          }
-                          action(
-                            () =>
-                              api(`/profiles/${p.id}/run`, "POST", {
-                                targetTime: target.toISOString(),
-                              }),
-                            "Hourly composition queued",
-                          );
-                        }}
+                        onClick={() => setHourProfile(p)}
                       >
-                        Stitch UTC hour
+                        Create for a specific hour…
                       </button>
                     </div>
                   </article>
@@ -390,7 +529,7 @@ function App() {
               <button
                 onClick={() =>
                   setSource({
-                    id: crypto.randomUUID(),
+                    id: newRecordId(),
                     name: "New source",
                     satellite: "New satellite",
                     region: "",
@@ -505,6 +644,30 @@ function App() {
         )}
         {page === "Profiles" && (
           <div className="cards">
+            <article>
+              <h2>False-color satellite disk</h2>
+              <p>
+                Create a full disk from one satellite, centered automatically on
+                its longitude.
+              </p>
+              <button
+                disabled={!state.sources.length || !state.underlays.length}
+                onClick={() =>
+                  setProfile(
+                    profileSchema.parse({
+                      id: newRecordId(),
+                      name: "Satellite disk",
+                      enabled: false,
+                      projection: "disk",
+                      sourceIds: [],
+                      underlay: state.underlays[0],
+                    }),
+                  )
+                }
+              >
+                New satellite disk profile
+              </button>
+            </article>
             {state.profiles.map((p) => (
               <article key={p.id}>
                 <div className="row">
@@ -516,12 +679,15 @@ function App() {
                 <p>
                   {p.projection === "map"
                     ? "Equirectangular map"
-                    : `Globe at ${p.longitude}°`}{" "}
+                    : p.projection === "disk"
+                      ? "False-color satellite disk"
+                      : `Globe at ${p.longitude}°`}{" "}
                   · {p.resolution} km
                 </p>
                 <p>
-                  {p.sourceIds.length} required sources · ±{p.toleranceMinutes}{" "}
-                  minutes
+                  {p.sourceIds.length} required +{" "}
+                  {(p.optionalSourceIds ?? []).length} optional sources · ±
+                  {p.toleranceMinutes} minutes
                 </p>
                 {p.blockers.length > 0 && (
                   <details>
@@ -533,39 +699,57 @@ function App() {
                 )}
                 <button onClick={() => setProfile(p)}>Edit profile</button>
                 <button
+                  className="danger"
+                  disabled={
+                    busy ||
+                    state.jobs.some(
+                      (j) =>
+                        j.profileId === p.id &&
+                        ["running", "queued"].includes(j.status),
+                    )
+                  }
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Delete profile “${p.name}”? Generated stitches remain in Files and job history is kept.`,
+                      )
+                    )
+                      void action(
+                        () =>
+                          api(
+                            `/profiles/${encodeURIComponent(p.id)}`,
+                            "DELETE",
+                            {},
+                          ),
+                        "Profile deleted",
+                      );
+                  }}
+                >
+                  Delete profile
+                </button>
+                {state.jobs.some(
+                  (j) =>
+                    j.profileId === p.id &&
+                    ["running", "queued"].includes(j.status),
+                ) && (
+                  <p className="muted">
+                    This profile has an active job. Wait for it to finish or
+                    cancel it in Jobs to delete this profile.
+                  </p>
+                )}
+                <button
                   disabled={busy || !!p.blockers.length}
                   onClick={() =>
-                    action(
-                      () => api(`/profiles/${p.id}/run`, "POST", {}),
-                      "Composition queued",
-                    )
+                    action(() => startComposition(p.id), "Composition queued")
                   }
                 >
                   Run now
                 </button>
                 <button
                   disabled={busy || !!p.blockers.length}
-                  onClick={() => {
-                    const value = window.prompt("UTC hour (YYYY-MM-DDTHH:00)");
-                    if (!value) return;
-                    const target = new Date(`${value}:00Z`);
-                    if (
-                      !Number.isFinite(+target) ||
-                      target.getUTCMinutes() !== 0
-                    ) {
-                      setError("Enter a UTC hour such as 2026-09-28T03:00");
-                      return;
-                    }
-                    action(
-                      () =>
-                        api(`/profiles/${p.id}/run`, "POST", {
-                          targetTime: target.toISOString(),
-                        }),
-                      "Hourly composition queued",
-                    );
-                  }}
+                  onClick={() => setHourProfile(p)}
                 >
-                  Stitch UTC hour
+                  Create for a specific hour…
                 </button>
               </article>
             ))}
@@ -630,6 +814,7 @@ function App() {
             )}
           </>
         )}
+        {page === "Files" && <FileManager onChange={refresh} />}
         {page === "Settings" && (
           <article>
             <h2>Processing & retention</h2>
@@ -673,7 +858,9 @@ function App() {
             </button>
             <p className="muted">
               Latest successful output only · Server listens on localhost ·{" "}
-              {auth?.required ? "Password login enabled" : "No account required"}
+              {auth?.required
+                ? "Password login enabled"
+                : "No account required"}
             </p>
             {auth?.required && (
               <button
@@ -692,6 +879,17 @@ function App() {
           </article>
         )}
       </main>
+      {hourProfile && (
+        <HourPicker
+          name={hourProfile.name}
+          onClose={() => setHourProfile(undefined)}
+          onSubmit={async (targetTime) => {
+            await startComposition(hourProfile.id, targetTime);
+            setNotice("Hourly composition queued");
+            void refresh().catch((e) => setError(e.message));
+          }}
+        />
+      )}
       {source && (
         <div className="modal-backdrop">
           <section
@@ -921,6 +1119,29 @@ function App() {
                     }
                   />
                 </Field>
+                <Field label="Output type">
+                  <select
+                    value={profile.projection}
+                    onChange={(e) => {
+                      const projection = e.target
+                        .value as Profile["projection"];
+                      setProfile({
+                        ...profile,
+                        projection,
+                        ...(projection === "disk"
+                          ? {
+                              sourceIds: profile.sourceIds.slice(0, 1),
+                              optionalSourceIds: [],
+                            }
+                          : {}),
+                      });
+                    }}
+                  >
+                    <option value="map">Global map</option>
+                    <option value="globe">Virtual satellite globe</option>
+                    <option value="disk">False-color satellite disk</option>
+                  </select>
+                </Field>
                 <Field label="Resolution">
                   <select
                     value={profile.resolution}
@@ -974,18 +1195,25 @@ function App() {
                     "saturation",
                     "haze",
                   ] as const
-                ).map((k) => (
-                  <Field key={k} label={k}>
-                    <input
-                      type="number"
-                      step="any"
-                      value={profile[k]}
-                      onChange={(e) =>
-                        setProfile({ ...profile, [k]: Number(e.target.value) })
-                      }
-                    />
-                  </Field>
-                ))}
+                )
+                  .filter(
+                    (k) => k !== "longitude" || profile.projection !== "disk",
+                  )
+                  .map((k) => (
+                    <Field key={k} label={k}>
+                      <input
+                        type="number"
+                        step="any"
+                        value={profile[k]}
+                        onChange={(e) =>
+                          setProfile({
+                            ...profile,
+                            [k]: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                  ))}
                 <Field label="Tint (hex)">
                   <input
                     value={profile.tint}
@@ -995,24 +1223,80 @@ function App() {
                   />
                 </Field>
               </div>
-              <h3>Required sources</h3>
-              {state.sources.map((s) => (
-                <label className="check" key={s.id}>
-                  <input
-                    type="checkbox"
-                    checked={profile.sourceIds.includes(s.id)}
-                    onChange={(e) =>
+              {profile.projection === "disk" ? (
+                <Field label="Satellite">
+                  <select
+                    required
+                    value={profile.sourceIds[0] ?? ""}
+                    onChange={(e) => {
+                      const source = state.sources.find(
+                        (s) => s.id === e.target.value,
+                      )!;
                       setProfile({
                         ...profile,
-                        sourceIds: e.target.checked
-                          ? [...profile.sourceIds, s.id]
-                          : profile.sourceIds.filter((id) => id !== s.id),
-                      })
-                    }
-                  />
-                  {s.name}
-                </label>
-              ))}
+                        sourceIds: [source.id],
+                        optionalSourceIds: [],
+                        name:
+                          profile.name === "Satellite disk"
+                            ? source.satellite + " false-color disk"
+                            : profile.name,
+                      });
+                    }}
+                  >
+                    <option value="" disabled>
+                      Select a satellite
+                    </option>
+                    {state.sources.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : (
+                <>
+                  <h3>Sources</h3>
+                  <p className="muted">
+                    Optional sources are included when available. Missing
+                    optional imagery won’t stop a stitch.
+                  </p>
+                  {state.sources.map((s) => (
+                    <Field key={s.id} label={s.name}>
+                      <select
+                        aria-label={`${s.name} inclusion`}
+                        value={
+                          profile.sourceIds.includes(s.id)
+                            ? "required"
+                            : (profile.optionalSourceIds ?? []).includes(s.id)
+                              ? "optional"
+                              : "off"
+                        }
+                        onChange={(e) =>
+                          setProfile({
+                            ...profile,
+                            sourceIds: [
+                              ...profile.sourceIds.filter((id) => id !== s.id),
+                              ...(e.target.value === "required" ? [s.id] : []),
+                            ],
+                            optionalSourceIds: [
+                              ...(profile.optionalSourceIds ?? []).filter(
+                                (id) => id !== s.id,
+                              ),
+                              ...(e.target.value === "optional" ? [s.id] : []),
+                            ],
+                          })
+                        }
+                      >
+                        <option value="off">Not included</option>
+                        <option value="required">Required</option>
+                        <option value="optional">
+                          Optional — when available
+                        </option>
+                      </select>
+                    </Field>
+                  ))}
+                </>
+              )}
               <label className="check">
                 <input
                   type="checkbox"
@@ -1045,6 +1329,7 @@ function App() {
               <button onClick={() => setJob(undefined)}>Close</button>
             </div>
             <p>{job.message}</p>
+            <p className="muted">Logs update automatically every 4 seconds.</p>
             <pre>{job.logs || "No process output yet."}</pre>
             <button
               onClick={() =>

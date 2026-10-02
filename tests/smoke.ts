@@ -67,13 +67,21 @@ store.put("sources", secondSource.id, {
     message: "Synthetic fixture",
   },
 });
+store.put("sources", "optional-missing", {
+  ...source,
+  id: "optional-missing",
+  name: "Unavailable optional",
+  satellite: "Unavailable optional",
+  pattern: "never-matches",
+});
 try {
   for (const projection of ["map", "globe"] as const) {
     const profile = profileSchema.parse({
       id: `smoke-${projection}`,
       name: `Smoke ${projection}`,
       enabled: false,
-      sourceIds: [source.id, secondSource.id],
+      sourceIds: [source.id],
+      optionalSourceIds: [secondSource.id, "optional-missing"],
       projection,
       underlay: "world.200412.3x21600x10800.jpg",
     });
@@ -95,6 +103,8 @@ try {
     const output = store.outputs().find((o) => o.profileId === profile.id)!;
     assert.ok(output.width > 1000);
     assert.equal(output.observations.length, 2);
+    assert.ok(output.observations.some((o) => o.sourceId === secondSource.id));
+    assert.match(result.logs, /Skipped optional Unavailable optional/);
     console.log("Output dimensions:", output.width, output.height);
     const before = JSON.stringify(output);
     store.put("profiles", profile.id, {

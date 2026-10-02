@@ -21,7 +21,7 @@ const utc = (time: string) =>
     .replace(/\.\d{3}Z$/, " UTC");
 type Part = { text: string; missing?: boolean };
 
-// Adapted from the caption-band design in the user's overlayer.py.
+// A broadcast-style caption stays outside the satellite imagery.
 // Metadata comes from the completed job rather than guessing from filenames.
 export function captionBand(
   width: number,
@@ -31,10 +31,22 @@ export function captionBand(
   images: AcquiredImage[],
   available: SourceRecord[],
 ) {
-  const font = Math.max(12, Math.round(width / 130));
-  const limit = Math.max(12, Math.floor((width - 32) / (font * 0.64)));
-  const rows: Part[][] = [];
-  const wrap = (parts: Part[]) => {
+  const font = Math.max(12, Math.round(width / 110));
+  const padding = Math.max(16, Math.round(width / 64));
+  const accent = "#53d5ed";
+  const elements: string[] = [];
+  let y = padding;
+  const wrap = (
+    parts: Part[],
+    size = font,
+    color = "#dce5ef",
+    weight = 400,
+  ) => {
+    const limit = Math.max(
+      1,
+      Math.floor((width - padding * 2) / (size * 0.75)),
+    );
+    const rows: Part[][] = [];
     let row: Part[] = [],
       length = 0;
     for (const part of parts) {
@@ -48,15 +60,42 @@ export function captionBand(
           }
           if (!row.length && !text.trim()) continue;
           const previous = row.at(-1);
-          if (previous && !!previous.missing === !!part.missing) previous.text += text;
+          if (previous && !!previous.missing === !!part.missing)
+            previous.text += text;
           else row.push({ ...part, text });
           length += text.length;
         }
       }
     }
     if (row.length) rows.push(row);
+    for (const row of rows) {
+      elements.push(
+        `<text x="${padding}" y="${y + size}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${size}" font-weight="${weight}">${row.map((p) => `<tspan fill="${p.missing ? "#ffb86b" : color}">${escapeXml(p.text)}</tspan>`).join("")}</text>`,
+      );
+      y += Math.ceil(size * 1.45);
+    }
   };
-  wrap([{ text: `${profile.name} — ${utc(target)}` }]);
+  wrap(
+    [
+      {
+        text:
+          profile.projection === "disk"
+            ? "FALSE-COLOR SATELLITE DISK"
+            : "SATELLITE COMPOSITE",
+      },
+    ],
+    font,
+    accent,
+    700,
+  );
+  y += Math.ceil(font * 0.4);
+  wrap([{ text: profile.name }], Math.round(font * 1.85), "#f5f8fc", 700);
+  wrap([{ text: `TARGET  ${utc(target)}` }], font, accent, 600);
+  y += Math.ceil(font * 0.8);
+  elements.push(
+    `<path d="M ${padding} ${y} H ${width - padding}" stroke="#344354"/>`,
+  );
+  y += Math.ceil(font * 0.8);
   const used = new Set(sources.map((s) => s.satellite));
   const missing = [
     ...new Set(
@@ -73,19 +112,22 @@ export function captionBand(
         ]),
       ),
   );
-  wrap([
-    {
-      text:
-        "Observations: " +
-        sources
-          .map((s, i) => `${s.satellite}: ${utc(images[i].observationTime)}`)
-          .join(" · "),
-    },
-  ]);
-  const lineHeight = Math.ceil(font * 1.5),
-    padding = Math.ceil(font * 0.75),
-    height = rows.length * lineHeight + padding * 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="white"/>${rows.map((row, i) => `<text x="${width / 2}" y="${padding + font + i * lineHeight}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${font}">${row.map((p) => `<tspan fill="${p.missing ? "#cc0000" : "#111111"}">${escapeXml(p.text)}</tspan>`).join("")}</text>`).join("")}</svg>`;
+  y += Math.ceil(font * 0.4);
+  wrap(
+    [
+      {
+        text:
+          "Observations: " +
+          sources
+            .map((s, i) => `${s.satellite}: ${utc(images[i].observationTime)}`)
+            .join(" · "),
+      },
+    ],
+    font,
+    "#9eafc2",
+  );
+  const height = Math.ceil(y + padding);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#111923"/>${elements.join("")}<rect x="0" y="${height - 3}" width="${width}" height="3" fill="${accent}"/></svg>`;
   return { svg, height };
 }
 
@@ -115,12 +157,24 @@ export async function addAttributionOverlay(
       bottom: 0,
       left: 0,
       right: 0,
-      background: "white",
+      background: "#111923",
     })
     .composite([{ input: Buffer.from(band.svg), left: 0, top: 0 }])
     .toFormat(
       profile.format === "png" ? "png" : "jpeg",
-      profile.format === "jpg" ? { quality: 92 } : undefined,
+      profile.format === "png"
+        ? {
+            // Quantise satellite composites to reduce download sizes without
+            // reducing their dimensions. Palette conversion is lossy.
+            compressionLevel: 9,
+            adaptiveFiltering: true,
+            effort: 10,
+            palette: true,
+            colours: 128,
+            // Dithering adds noise that substantially increases PNG size.
+            dither: 0,
+          }
+        : { quality: 85, mozjpeg: true },
     )
     .toFile(output);
 }

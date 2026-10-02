@@ -61,7 +61,8 @@ export const profileSchema = z.object({
   name: z.string().min(1).max(100),
   enabled: z.boolean(),
   sourceIds: z.array(id).max(20),
-  projection: z.enum(["map", "globe"]),
+  optionalSourceIds: z.array(id).max(20).default([]),
+  projection: z.enum(["map", "globe", "disk"]),
   longitude: finite.min(-180).max(180).default(180),
   resolution: z
     .union([z.literal(0.5), z.literal(1), z.literal(2), z.literal(4)])
@@ -116,6 +117,7 @@ export interface Job {
     "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
   message: string;
   logs: string;
+  stage?: "acquiring" | "preparing" | "composing" | "publishing";
 }
 export interface PublishedOutput {
   profileId: string;

@@ -16,6 +16,7 @@ import {
 import { Store } from "./store.js";
 import { Engine, blockers, targetTime } from "./engine.js";
 import { acquire } from "./acquisition.js";
+import { listFiles, deleteFile } from "./files.js";
 
 export async function createApp(
   root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
@@ -26,13 +27,14 @@ export async function createApp(
     engine = new Engine(store, root),
     app = express(),
     password = process.env.GSICM_PASSWORD?.trim(),
+    publicAccess = process.env.GSICM_PUBLIC === "1",
     sessionToken = password ? crypto.randomBytes(32).toString("base64url") : "";
   app.use((req, res, next) => {
     const host = req.hostname;
-    if (!["127.0.0.1", "localhost", "::1"].includes(host))
+    if (!publicAccess && !["127.0.0.1", "localhost", "::1"].includes(host))
       return res.status(403).json({ error: "Local connections only." });
     const origin = req.headers.origin;
-    if (origin && origin !== `http://${req.headers.host}`)
+    if (!publicAccess && origin && origin !== `http://${req.headers.host}`)
       return res.status(403).json({ error: "Untrusted origin." });
     if (!["GET", "HEAD"].includes(req.method) && !req.is("application/json"))
       return res.status(415).json({ error: "JSON requests required." });
@@ -306,7 +308,15 @@ export async function createApp(
   app.delete("/api/sources/:id", (req, res) => {
     if (locked())
       return res.status(409).json({ error: "Processing is active." });
-    if (store.profiles().some((p) => p.sourceIds.includes(req.params.id)))
+    if (
+      store
+        .profiles()
+        .some((p) =>
+          [...p.sourceIds, ...(p.optionalSourceIds ?? [])].includes(
+            req.params.id,
+          ),
+        )
+    )
       return res
         .status(409)
         .json({ error: "Remove this source from profiles first." });
@@ -377,9 +387,15 @@ export async function createApp(
     const profile = profileSchema.parse({ ...req.body, id: req.params.id });
     if (!underlays.includes(profile.underlay))
       throw new Error("Choose a bundled underlay.");
-    if (new Set(profile.sourceIds).size !== profile.sourceIds.length)
+    if (
+      profile.projection === "disk" &&
+      (profile.sourceIds.length !== 1 || profile.optionalSourceIds.length)
+    )
+      throw new Error("Select exactly one satellite for a false-color disk.");
+    const allSourceIds = [...profile.sourceIds, ...profile.optionalSourceIds];
+    if (new Set(allSourceIds).size !== allSourceIds.length)
       throw new Error("Duplicate required sources.");
-    const names = profile.sourceIds.map(
+    const names = allSourceIds.map(
       (id) => store.get<SourceRecord>("sources", id)?.satellite,
     );
     if (names.some((n) => !n) || new Set(names).size !== names.length)
@@ -387,6 +403,25 @@ export async function createApp(
         "Choose existing sources with distinct satellite identities.",
       );
     store.put("profiles", profile.id, profile);
+    res.json({ ok: true });
+  });
+  app.delete("/api/profiles/:id", (req, res) => {
+    if (
+      store
+        .list<Job>("jobs")
+        .some(
+          (job) =>
+            job.profileId === req.params.id &&
+            ["running", "queued"].includes(job.status),
+        )
+    )
+      return res.status(409).json({
+        error:
+          "This profile has an active job. Wait for it to finish or cancel it in Jobs before deleting the profile.",
+      });
+    if (!store.get("profiles", req.params.id))
+      return res.status(404).json({ error: "Profile not found." });
+    store.delete("profiles", req.params.id);
     res.json({ ok: true });
   });
   app.post("/api/profiles/:id/run", (req, res) => {
@@ -415,6 +450,22 @@ export async function createApp(
     if (!output) return res.sendStatus(404);
     res.setHeader("Cache-Control", "no-cache");
     res.sendFile(output.path);
+  });
+  app.get("/api/files", async (_req, res) => {
+    res.json({ files: await listFiles(store), locked: locked() });
+  });
+  app.delete("/api/files/:folder/:name", async (req, res) => {
+    if (locked())
+      return res.status(409).json({
+        error: "Wait for active jobs and source tests before deleting files.",
+      });
+    testing.add("file-deletion");
+    try {
+      await deleteFile(store, req.params.folder, req.params.name);
+      res.json({ ok: true });
+    } finally {
+      testing.delete("file-deletion");
+    }
   });
   app.put("/api/settings", (req, res) => {
     if (locked())
@@ -458,7 +509,9 @@ if (
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
-    data = path.resolve(process.env.GSICM_DATA_DIR ?? path.join(root, "data"));
+    data = path.resolve(process.env.GSICM_DATA_DIR ?? path.join(root, "data")),
+    port = Number(process.env.PORT ?? 3210),
+    host = process.env.HOST ?? "127.0.0.1";
   await mkdir(data, { recursive: true });
   // The listening port is also the process-wide lock: bind before opening/recovering the database.
   const gate = express();
@@ -468,7 +521,7 @@ if (
       ? application(req, res, next)
       : res.status(503).send("Starting manager"),
   );
-  const server = gate.listen(Number(process.env.PORT ?? 3210), "127.0.0.1");
+  const server = gate.listen(port, host);
   await new Promise<void>((resolve, reject) => {
     server.once("listening", resolve);
     server.once("error", reject);
@@ -505,7 +558,7 @@ if (
   application = instance.app;
   const timer = setInterval(instance.tick, 15000);
   instance.tick();
-  console.log(`GSICM is ready at http://127.0.0.1:${process.env.PORT ?? 3210}`);
+  console.log(`GSICM is ready at http://${host}:${port}`);
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 }
