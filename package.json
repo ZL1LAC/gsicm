@@ -14,6 +14,7 @@
     "smoke": "tsx tests/smoke.ts",
     "test:elektro4": "tsx scripts/test-elektro4-live.ts",
     "test:ui": "tsx tests/ui.ts",
+    "test:refresh": "tsx tests/refresh-hook.tsx && tsx tests/auto-refresh.ts",
     "format": "prettier --write server shared src tests vite.config.ts"
   },
   "dependencies": {

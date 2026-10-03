@@ -49,6 +49,12 @@ HTTP templates support `{YYYY}`, `{MM}`, `{DD}`, `{DDD}`, `{HH}`, `{mm}`, `{ss}`
 
 Source tests validate decoding, dimensions, and timestamp compatibility. Visual cleanliness and satellite geometry require operator confirmation; software cannot infer them from dimensions alone. Missing or out-of-tolerance inputs fail the job without publishing a partial composite. Output details list the actual included observations and attribution.
 
+## Dashboard
+
+Overview puts the latest imagery beside current activity and setup issues. Use **New profile** to create a map, globe, or full-disc profile. Jobs and Files support search and filters; job logs can follow new output automatically. Configuration forms keep unsaved changes while data updates.
+
+State, visible files, and open job logs refresh every four seconds, and immediately when the browser reconnects or returns to the foreground. The connection indicator shows freshness; temporary failures retain the last successful data and retry automatically. Dashboard navigation uses bookmarkable URL fragments.
+
 ## Defaults and files
 
 - Poll every 10 minutes; target the previous completed interval boundary; accept observations within ±30 minutes.
@@ -60,16 +66,18 @@ Source tests validate decoding, dimensions, and timestamp compatibility. Visual 
 
 ## API
 
-`GET /api/state` returns configuration, blockers, job summaries, and output metadata. `PUT /api/sources/:id`, `PUT /api/profiles/:id`, and `PUT /api/settings` validate JSON configuration. `POST /api/sources/:id/test` retrieves and checks a sample. `POST /api/profiles/:id/run` queues work; `POST /api/jobs/:id/cancel` cancels it. `GET /api/jobs/:id` includes logs; `/api/images/:id` and `/api/outputs/:profileId` serve preview/output files. Configuration edits are locked while tests or jobs are active.
+`GET /api/state` returns configuration, blockers, job summaries without logs, and output metadata without filesystem paths. It includes `locked`, `testingSourceIds`, and `canRunJobs` so clients can explain operation availability; jobs may still be queued while another job runs. `PUT /api/sources/:id`, `PUT /api/profiles/:id`, and `PUT /api/settings` validate JSON configuration. `POST /api/sources/:id/test` retrieves and checks a sample. `POST /api/profiles/:id/run` queues work; `POST /api/jobs/:id/cancel` cancels it. `GET /api/jobs/:id` includes logs; `/api/images/:id` and `/api/outputs/:profileId` serve preview/output files. Configuration edits are locked while tests or jobs are active.
 
 ## Validation
 
 ```powershell
+npm run build
 npm test
-npm run smoke
+npm run test:refresh
 npm run test:ui
+npm run smoke
 ```
 
-Unit/integration tests cover HTTP, FTP, certificate-verified FTPS, anonymous paginated S3, timestamps, invalid images, retries, cancellation, recovery, cleanup, and API validation. Smoke tests require the manually supplied Sanchez distribution in `bin/` and run it for both projections against explicitly synthetic full-disc fixtures in temporary storage. Browser tests use an isolated database and synthetic imagery; install Chromium with `npx playwright install chromium` if needed.
+Unit/integration tests cover HTTP, FTP, certificate-verified FTPS, anonymous paginated S3, timestamps, invalid images, retries, cancellation, recovery, cleanup, and API validation. Smoke tests require the manually supplied Sanchez distribution in `bin/` and run it for both projections against explicitly synthetic full-disc fixtures in temporary storage. Refresh tests exercise polling, timeout/recovery, request races, live logs/images/files, session expiry, and unsaved drafts using mocked browser requests. Browser workflow tests use an isolated database and synthetic imagery; install Chromium with `npx playwright install chromium` if needed.
 
 Raw scientific decoding is supported for the verified public GOES-18/19, GK-2A, and Himawari-9 products. Meteosat Europe/Africa and Indian Ocean coverage remain setup blockers because no clean, account-free, timestamped feed has been verified. Provider credentials, live feed guarantees, polar cloud observations, historical archives, and OS startup integration remain outside this release.

@@ -12,6 +12,7 @@ import {
   type Job,
   type AcquiredImage,
   type PublishedOutput,
+  type ManagerState,
 } from "../shared/types.js";
 import { Store } from "./store.js";
 import { Engine, blockers, targetTime } from "./engine.js";
@@ -101,7 +102,10 @@ export async function createApp(
       outputs: store.outputs().map(({ path: _, ...o }) => o),
       underlays,
       activeJob: engine.active?.id,
-    }),
+      locked: locked(),
+      testingSourceIds: [...testing],
+      canRunJobs: !testing.size && !deletingFiles && !engine.maintaining,
+    } satisfies ManagerState),
   );
   app.post("/api/presets/install", (_req, res) => {
     if (locked())
@@ -268,8 +272,10 @@ export async function createApp(
     !!engine.active ||
     engine.maintaining ||
     store.list<Job>("jobs").some((j) => j.status === "queued") ||
-    testing.size > 0;
+    testing.size > 0 ||
+    deletingFiles;
   const testing = new Set<string>();
+  let deletingFiles = false;
   app.put("/api/sources/:id", (req, res) => {
     if (locked())
       return res.status(409).json({
@@ -425,8 +431,10 @@ export async function createApp(
     res.json({ ok: true });
   });
   app.post("/api/profiles/:id/run", (req, res) => {
-    if (testing.size)
-      return res.status(409).json({ error: "Source testing is active." });
+    if (testing.size || deletingFiles)
+      return res
+        .status(409)
+        .json({ error: "Wait for source testing or file cleanup to finish." });
     let target: Date | undefined;
     if (req.body?.targetTime !== undefined) {
       target = new Date(req.body.targetTime);
@@ -459,12 +467,12 @@ export async function createApp(
       return res.status(409).json({
         error: "Wait for active jobs and source tests before deleting files.",
       });
-    testing.add("file-deletion");
+    deletingFiles = true;
     try {
       await deleteFile(store, req.params.folder, req.params.name);
       res.json({ ok: true });
     } finally {
-      testing.delete("file-deletion");
+      deletingFiles = false;
     }
   });
   app.put("/api/settings", (req, res) => {
@@ -499,7 +507,7 @@ export async function createApp(
     ) => res.status(400).json({ error: error.message }),
   );
   const tick = () => {
-    if (!testing.size)
+    if (!testing.size && !deletingFiles)
       void engine.tick().catch((error) => console.error("Scheduler:", error));
   };
   return { app, store, engine, tick };

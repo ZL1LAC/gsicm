@@ -134,3 +134,35 @@ export interface PublishedOutput {
   width: number;
   height: number;
 }
+
+export type JobSummary = Omit<Job, "logs">;
+export type OutputSummary = Omit<PublishedOutput, "path">;
+export interface AuthState {
+  required: boolean;
+  authenticated: boolean;
+}
+export interface ManagerState {
+  sources: SourceRecord[];
+  profiles: (Profile & { blockers: string[] })[];
+  settings: Settings;
+  jobs: JobSummary[];
+  outputs: OutputSummary[];
+  underlays: string[];
+  activeJob?: string;
+  locked: boolean;
+  testingSourceIds: string[];
+  canRunJobs: boolean;
+}
+export interface FileEntry {
+  folder: "outputs" | "cache";
+  name: string;
+  bytes: number;
+  modifiedAt: string;
+  label?: string;
+  observationTime?: string;
+  preview?: string;
+}
+export interface FilesState {
+  files: FileEntry[];
+  locked: boolean;
+}
