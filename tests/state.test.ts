@@ -32,7 +32,7 @@ async function fixture() {
     instance.store.db.close();
     await rm(directory, { recursive: true, force: true });
   };
-  return { ...instance, read, write, close };
+  return { ...instance, base, read, write, close };
 }
 
 test("operation metadata preserves queueing and per-profile deletion while configuration is locked", async () => {
@@ -99,6 +99,18 @@ test("operation metadata preserves queueing and per-profile deletion while confi
     assert.equal(state.locked, true);
     assert.equal(state.canRunJobs, false);
     assert.equal((await app.write("/profiles/second/run")).status, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test("dashboard polling responses are never cached", async () => {
+  const app = await fixture();
+  try {
+    for (const route of ["/auth", "/state", "/files"]) {
+      const response = await fetch(`${app.base}${route}`);
+      assert.equal(response.headers.get("Cache-Control"), "no-store");
+    }
   } finally {
     await app.close();
   }

@@ -43,6 +43,10 @@ export async function createApp(
     next();
   });
   app.use(express.json({ limit: "128kb" }));
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
   const cookie = (req: express.Request, name: string) =>
     req.headers.cookie
       ?.split(";")

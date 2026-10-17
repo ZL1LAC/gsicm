@@ -177,7 +177,11 @@ try {
   job.stage = "publishing";
   await expect(image).toHaveAttribute("src", /published-2/, { timeout: 10000 });
 
+  const beforeNavigation = stateRequests;
   await nav("Sources").click();
+  await expect.poll(() => stateRequests, { timeout: 1500 }).toBeGreaterThan(
+    beforeNavigation,
+  );
   const card = page.locator("article").filter({
     has: page.getByRole("heading", { name: "Test satellite", exact: true }),
   });

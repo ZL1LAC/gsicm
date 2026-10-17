@@ -97,6 +97,20 @@ export function FileManager({
         Downloaded imagery and published composites. Deleting a composite keeps
         its profile and job history.
       </p>
+      {(query || filter !== "all") && (
+        <p className="muted filter-count" role="status">
+          Showing {visible.length} of {files.length} files
+          <button
+            className="text-button"
+            onClick={() => {
+              setQuery("");
+              setFilter("all");
+            }}
+          >
+            Clear filters
+          </button>
+        </p>
+      )}
       {locked && (
         <p role="status" className="inline-notice">
           Files are in use. Deletion is available when processing and source

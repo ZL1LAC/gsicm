@@ -155,6 +155,12 @@ small {
   font-size: 12px;
   line-height: 1.7;
 }
+.filter-count {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+}
 .eyebrow {
   color: var(--faint);
   font-size: 9px;

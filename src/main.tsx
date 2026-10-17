@@ -456,11 +456,19 @@ function App() {
   const [jobSearch, setJobSearch] = useState("");
   const [jobFilter, setJobFilter] = useState("all");
   const [, tick] = useState(0);
+  const initialPage = useRef(true);
   useEffect(() => {
     const onHash = () => setPage(readPage());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+  useEffect(() => {
+    if (initialPage.current) {
+      initialPage.current = false;
+      return;
+    }
+    void manager.refresh();
+  }, [page, manager.refresh]);
   useEffect(() => {
     const timer = setInterval(() => tick((n) => n + 1), 10000);
     return () => clearInterval(timer);
@@ -1239,6 +1247,20 @@ function App() {
                   </button>
                 </div>
               </div>
+              {(sourceSearch || sourceFilter !== "all") && (
+                <p className="muted filter-count" role="status">
+                  Showing {shownSources.length} of {state.sources.length} sources
+                  <button
+                    className="text-button"
+                    onClick={() => {
+                      setSourceSearch("");
+                      setSourceFilter("all");
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                </p>
+              )}
               {feedback("presets")}
               {lockedReason && <p className="inline-notice">{lockedReason}</p>}
               <div className="source-grid">
@@ -1519,6 +1541,20 @@ function App() {
                   History retained for {state.settings.logDays} days
                 </span>
               </div>
+              {(jobSearch || jobFilter !== "all") && (
+                <p className="muted filter-count" role="status">
+                  Showing {shownJobs.length} of {state.jobs.length} jobs
+                  <button
+                    className="text-button"
+                    onClick={() => {
+                      setJobSearch("");
+                      setJobFilter("all");
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                </p>
+              )}
               {shownJobs.some(active) && (
                 <section className="jobs-section">
                   <div className="section-heading">
