@@ -105,6 +105,22 @@ try {
     assert.equal(output.observations.length, 2);
     assert.ok(output.observations.some((o) => o.sourceId === secondSource.id));
     assert.match(result.logs, /Skipped optional Unavailable optional/);
+    assert.deepEqual(
+      Object.fromEntries(
+        result.sources!.map((source) => [source.sourceId, source.status]),
+      ),
+      {
+        synthetic: "ready",
+        "synthetic-west": "ready",
+        "optional-missing": "skipped",
+      },
+    );
+    assert.ok(
+      result.sources
+        ?.filter((source) => source.status === "ready")
+        .every((source) => source.imageId && source.observationTime),
+    );
+    assert.ok(result.stageStartedAt && result.lastActivityAt);
     console.log("Output dimensions:", output.width, output.height);
     const before = JSON.stringify(output);
     store.put("profiles", profile.id, {

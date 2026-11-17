@@ -8,6 +8,21 @@ import { decoderPython } from "./raw.js";
 import type { Store } from "./store.js";
 import type { Source, AcquiredImage } from "../shared/types.js";
 
+export function elektroGeometryError(source: Source, observationTime: string) {
+  const isN3 =
+    source.id === "electro-l3" ||
+    /ELECTRO_L_3(?:\/|$)/i.test(source.location) ||
+    source.satellite === "Electro-L N3";
+  // The handover date is known, but its exact UTC time is not. Exclude that
+  // entire day as well as older images when using the new orbital position.
+  if (
+    isN3 &&
+    source.longitude === -14.5 &&
+    Date.parse(observationTime) < Date.parse("2026-10-27T00:00:00Z")
+  )
+    return "N3 observations before 2026-10-27 UTC cannot use the post-handover longitude; historical geometry is not supported.";
+}
+
 export async function acquireElektro(
   store: Store,
   source: Source,
@@ -34,6 +49,14 @@ export async function acquireElektro(
     );
   let last = "No usable channel 9";
   for (const candidate of available) {
+    const geometryError = elektroGeometryError(
+      source,
+      candidate.observationTime,
+    );
+    if (geometryError) {
+      last = geometryError;
+      continue;
+    }
     const hit = cached.find((i) => i.remoteKey === candidate.key);
     if (hit) {
       try {
@@ -93,7 +116,7 @@ export async function acquireElektro(
       return image;
     } catch (error) {
       signal.throwIfAborted();
-      last = String(error);
+      last = error instanceof Error ? error.message : String(error);
       log(`${last}\n`);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -128,6 +151,14 @@ export async function acquireElektroRgb(
     );
   let last = "No usable RGB JPEG";
   for (const candidate of available) {
+    const geometryError = elektroGeometryError(
+      source,
+      candidate.observationTime,
+    );
+    if (geometryError) {
+      last = geometryError;
+      continue;
+    }
     const hit = cached.find((i) => i.remoteKey === candidate.key);
     if (hit) {
       try {
@@ -168,7 +199,7 @@ export async function acquireElektroRgb(
       return image;
     } catch (error) {
       signal.throwIfAborted();
-      last = String(error);
+      last = error instanceof Error ? error.message : String(error);
       log(`${last}\n`);
     } finally {
       await rm(dir, { recursive: true, force: true });

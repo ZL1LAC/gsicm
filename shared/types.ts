@@ -13,6 +13,7 @@ export const sourceSchema = z.object({
       "goes-abi",
       "gk2a-ami",
       "himawari-ahi",
+      "eumetview-iodc",
       "elektro-l",
       "elektro-rgb",
     ])
@@ -106,6 +107,15 @@ export interface AcquiredImage {
   nominalTime?: string;
   geometry?: { longitude: number; height: number };
 }
+export interface JobSourceProgress {
+  sourceId: string;
+  name: string;
+  optional: boolean;
+  status: "waiting" | "fetching" | "ready" | "skipped" | "failed" | "cancelled";
+  observationTime?: string;
+  imageId?: string;
+  message?: string;
+}
 export interface Job {
   id: string;
   profileId: string;
@@ -118,6 +128,9 @@ export interface Job {
   message: string;
   logs: string;
   stage?: "acquiring" | "preparing" | "composing" | "publishing";
+  stageStartedAt?: string;
+  lastActivityAt?: string;
+  sources?: JobSourceProgress[];
 }
 export interface PublishedOutput {
   profileId: string;

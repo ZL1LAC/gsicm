@@ -18,6 +18,7 @@ import type {
   Job,
   PublishedOutput,
   AcquiredImage,
+  JobSourceProgress,
 } from "../shared/types.js";
 import { acquire, inspectImage } from "./acquisition.js";
 export function targetTime(now = new Date(), minutes = 10) {
@@ -211,11 +212,35 @@ export class Engine {
       this.store.put("jobs", id, {
         ...job,
         logs: (job.logs + text).slice(-200000),
+        lastActivityAt: new Date().toISOString(),
       });
   }
   progress(id: string, stage: NonNullable<Job["stage"]>, message: string) {
     const job = this.store.get<Job>("jobs", id);
-    if (job) this.store.put("jobs", id, { ...job, stage, message });
+    if (job)
+      this.store.put("jobs", id, {
+        ...job,
+        stage,
+        message,
+        stageStartedAt:
+          job.stage === stage ? job.stageStartedAt : new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      });
+  }
+  sourceProgress(
+    id: string,
+    sourceId: string,
+    update: Partial<JobSourceProgress>,
+  ) {
+    const job = this.store.get<Job>("jobs", id);
+    if (job)
+      this.store.put("jobs", id, {
+        ...job,
+        sources: job.sources?.map((source) =>
+          source.sourceId === sourceId ? { ...source, ...update } : source,
+        ),
+        lastActivityAt: new Date().toISOString(),
+      });
   }
   async drain() {
     if (this.active || this.stopping) return;
@@ -250,7 +275,19 @@ export class Engine {
       ];
       const chosen: SourceRecord[] = [];
       const images: AcquiredImage[] = [];
+      this.store.put("jobs", job.id, {
+        ...this.store.get<Job>("jobs", job.id)!,
+        sources: requested.map((source) => ({
+          sourceId: source.id,
+          name: source.name,
+          optional:
+            optionalIds.has(source.id) &&
+            !profile.sourceIds.includes(source.id),
+          status: "waiting",
+        })),
+      });
       for (const [index, source] of requested.entries()) {
+        this.sourceProgress(job.id, source.id, { status: "fetching" });
         this.progress(
           job.id,
           "acquiring",
@@ -271,8 +308,20 @@ export class Engine {
           );
           images.push(image);
           chosen.push(source);
+          this.sourceProgress(job.id, source.id, {
+            status: "ready",
+            imageId: image.id,
+            observationTime: image.observationTime,
+          });
         } catch (error) {
           controller.signal.throwIfAborted();
+          const required =
+            !optionalIds.has(source.id) ||
+            profile.sourceIds.includes(source.id);
+          this.sourceProgress(job.id, source.id, {
+            status: required ? "failed" : "skipped",
+            message: error instanceof Error ? error.message : String(error),
+          });
           if (
             !optionalIds.has(source.id) ||
             profile.sourceIds.includes(source.id)
@@ -424,6 +473,16 @@ export class Engine {
       status,
       message,
       finishedAt: new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      sources: job.sources?.map((source) =>
+        source.status === "waiting" || source.status === "fetching"
+          ? {
+              ...source,
+              status: status === "cancelled" ? "cancelled" : "skipped",
+              message: "Run stopped before this input was ready.",
+            }
+          : source,
+      ),
     });
   }
   async tick(now = new Date()) {

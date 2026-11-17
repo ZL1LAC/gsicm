@@ -24,7 +24,8 @@ export function elektroDirectories(
   target: Date,
   tolerance: number,
 ) {
-  const step = 30 * 60000;
+  // The public archives also publish quarter-hour observations (notably N3).
+  const step = 15 * 60000;
   const directories: string[] = [];
   for (
     let t = Math.ceil((+target - tolerance * 60000) / step) * step;
@@ -419,6 +420,10 @@ export async function acquire(
       ? acquireElektroRgb(store, source, target, tolerance, signal, log)
       : acquireElektro(store, source, target, tolerance, signal, log);
   }
+  if (source.product === "eumetview-iodc") {
+    const { acquireEumetview } = await import("./eumetview.js");
+    return acquireEumetview(store, source, target, tolerance, signal, log);
+  }
   if (source.product && source.product !== "raster") {
     const { acquireRaw } = await import("./raw.js");
     return acquireRaw(store, source, target, tolerance, signal, log);
@@ -502,7 +507,7 @@ export async function acquire(
       return image;
     } catch (error) {
       signal.throwIfAborted();
-      last = String(error);
+      last = error instanceof Error ? error.message : String(error);
     } finally {
       await rm(temp, { force: true });
       await rm(normalized, { force: true });

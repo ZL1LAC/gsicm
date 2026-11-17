@@ -29,11 +29,21 @@ export class Store {
           status: "interrupted",
           finishedAt: new Date().toISOString(),
           message: "Manager stopped before this job completed.",
+          sources: job.sources?.map((source) =>
+            source.status === "waiting" || source.status === "fetching"
+              ? {
+                  ...source,
+                  status: "skipped",
+                  message: "Manager stopped before this input was ready.",
+                }
+              : source,
+          ),
         });
     if (!this.get("settings", "main"))
       this.put("settings", "main", settingsSchema.parse({}));
     if (!this.get("meta", "seeded")) this.seed();
     this.removeObsoletePlaceholders();
+    this.applyElektroHandover();
   }
   get<T>(kind: string, id: string): T | undefined {
     const row = this.db
@@ -96,6 +106,39 @@ export class Store {
           profile.id,
           profileSchema.parse({ ...profile, sourceIds }),
         );
+    }
+  }
+  applyElektroHandover() {
+    if (this.get("meta", "elektro-handover-2026")) return;
+    this.db.exec("BEGIN");
+    try {
+      this.delete("sources", "electro-l2");
+      for (const profile of this.profiles()) {
+        this.put(
+          "profiles",
+          profile.id,
+          profileSchema.parse({
+            ...profile,
+            sourceIds: profile.sourceIds.filter((id) => id !== "electro-l2"),
+            optionalSourceIds: (profile.optionalSourceIds ?? []).filter(
+              (id) => id !== "electro-l2",
+            ),
+          }),
+        );
+      }
+      const replacement = this.get<SourceRecord>("sources", "electro-l3");
+      if (replacement?.longitude === 76) {
+        this.put("sources", replacement.id, {
+          ...replacement,
+          longitude: -14.5,
+          validation: undefined,
+        });
+      }
+      this.put("meta", "elektro-handover-2026", true);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
     }
   }
   seed() {

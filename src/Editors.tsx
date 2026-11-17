@@ -358,6 +358,9 @@ export function SourceEditor({
                     <option value="goes-abi">GOES ABI infrared</option>
                     <option value="gk2a-ami">GK-2A AMI infrared</option>
                     <option value="himawari-ahi">Himawari AHI infrared</option>
+                    <option value="eumetview-iodc">
+                      Meteosat-9 EUMETView IR10.8
+                    </option>
                     <option value="elektro-l">Elektro-L raw infrared</option>
                     <option value="elektro-rgb">Elektro-L RGB imagery</option>
                   </select>
@@ -382,9 +385,11 @@ export function SourceEditor({
                 ) : (
                   <Field
                     label={
-                      draft.transport === "http"
-                        ? "Image URL template"
-                        : "Directory URL"
+                      draft.product === "eumetview-iodc"
+                        ? "EUMETView WMS endpoint"
+                        : draft.transport === "http"
+                          ? "Image URL template"
+                          : "Directory URL"
                     }
                     error={fieldErrors.location}
                   >

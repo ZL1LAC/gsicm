@@ -1,4 +1,5 @@
 import express from "express";
+import { ZodError } from "zod";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,7 @@ import {
 import { Store } from "./store.js";
 import { Engine, blockers, targetTime } from "./engine.js";
 import { acquire } from "./acquisition.js";
+import { eumetviewPreset } from "./eumetview.js";
 import { listFiles, deleteFile } from "./files.js";
 
 export async function createApp(
@@ -207,8 +209,7 @@ export async function createApp(
         );
     }
     for (const [id, name, satellite, longitude, folder] of [
-      ["electro-l2", "Electro-L No.2", "Electro-L N2", -14.5, "ELECTRO_L_2"],
-      ["electro-l3", "Electro-L No.3", "Electro-L N3", 76, "ELECTRO_L_3"],
+      ["electro-l3", "Electro-L No.3", "Electro-L N3", -14.5, "ELECTRO_L_3"],
     ] as const) {
       if (!store.get("sources", id))
         store.put(
@@ -230,7 +231,7 @@ export async function createApp(
             expectedHeight: 2784,
             crop: [0.012703, 0.012703, 0.012703, 0.012703],
             invert: true,
-            brightness: id === "electro-l2" ? 1.2 : 1.3,
+            brightness: 1.3,
             cadenceMinutes: 30,
             pattern: "\\d{6}_\\d{4}\\.zip$",
             timestampRegex: "(\\d{6}_\\d{4})",
@@ -270,7 +271,9 @@ export async function createApp(
           blocker: "Test RGB full-disc JPEG; archive times are Moscow UTC+3.",
         }),
       );
-    res.json({ installed: presets.map(([id]) => id) });
+    if (!store.get("sources", eumetviewPreset.id))
+      store.put("sources", eumetviewPreset.id, eumetviewPreset);
+    res.json({ installed: [...presets.map(([id]) => id), eumetviewPreset.id] });
   });
   const locked = () =>
     !!engine.active ||
@@ -353,7 +356,9 @@ export async function createApp(
         requestedTarget,
         30,
         AbortSignal.timeout(
-          source.product === "elektro-l" || source.product === "elektro-rgb"
+          source.product === "elektro-l" ||
+            source.product === "elektro-rgb" ||
+            source.product === "eumetview-iodc"
             ? 900000
             : 180000,
         ),
@@ -378,7 +383,7 @@ export async function createApp(
       const validation = {
         at: new Date().toISOString(),
         compatible: false,
-        message: String(error),
+        message: error instanceof Error ? error.message : String(error),
       };
       store.put("sources", source.id, { ...source, validation });
       res.status(422).json(validation);
@@ -508,7 +513,22 @@ export async function createApp(
       _req: express.Request,
       res: express.Response,
       _next: express.NextFunction,
-    ) => res.status(400).json({ error: error.message }),
+    ) => {
+      if (error instanceof ZodError)
+        return res.status(400).json({
+          error: error.issues
+            .map(
+              (i) => (i.path.length ? `${i.path.join(".")}: ` : "") + i.message,
+            )
+            .join(". "),
+        });
+      // sendFile and body-parser errors carry an HTTP status; never expose server paths.
+      const status = (error as { status?: number }).status;
+      if (status === 404) return res.status(404).json({ error: "Not found." });
+      res
+        .status(status && status >= 400 && status < 600 ? status : 400)
+        .json({ error: error.message });
+    },
   );
   const tick = () => {
     if (!testing.size && !deletingFiles)

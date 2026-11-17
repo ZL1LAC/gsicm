@@ -1,4 +1,11 @@
 import sharp from "sharp";
+import { fileURLToPath } from "node:url";
+
+// SVG text needs Fontconfig even when the host has no desktop fonts installed.
+// Use a bundled, licensed font so headless services render real glyphs too.
+process.env.FONTCONFIG_FILE ??= fileURLToPath(
+  new URL("../assets/fonts/fonts.conf", import.meta.url),
+);
 import type { Profile, SourceRecord, AcquiredImage } from "../shared/types.js";
 
 const escapeXml = (text: string) =>

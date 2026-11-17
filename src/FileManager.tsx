@@ -3,6 +3,7 @@ import type { FileEntry, FilesState } from "../shared/types";
 import { api, ApiError } from "./api";
 import { Dialog } from "./Dialog";
 import { useAutoRefresh } from "./useAutoRefresh";
+import { FilterCount } from "./ui";
 
 const size = (bytes: number) =>
   bytes < 1048576
@@ -98,18 +99,15 @@ export function FileManager({
         its profile and job history.
       </p>
       {(query || filter !== "all") && (
-        <p className="muted filter-count" role="status">
-          Showing {visible.length} of {files.length} files
-          <button
-            className="text-button"
-            onClick={() => {
-              setQuery("");
-              setFilter("all");
-            }}
-          >
-            Clear filters
-          </button>
-        </p>
+        <FilterCount
+          shown={visible.length}
+          total={files.length}
+          noun="files"
+          onClear={() => {
+            setQuery("");
+            setFilter("all");
+          }}
+        />
       )}
       {locked && (
         <p role="status" className="inline-notice">

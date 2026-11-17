@@ -140,6 +140,11 @@ try {
         return;
       }
       body = job;
+    } else if (url.pathname === "/api/jobs/job-1/cancel") {
+      job.status = "cancelled";
+      job.finishedAt = new Date().toISOString();
+      job.message = "Cancelled by operator";
+      body = { ok: true };
     } else if (url.pathname === "/api/files") body = files;
     else if (url.pathname.startsWith("/api/files/") && method === "DELETE") {
       if (deleteFailure) {
@@ -179,9 +184,9 @@ try {
 
   const beforeNavigation = stateRequests;
   await nav("Sources").click();
-  await expect.poll(() => stateRequests, { timeout: 1500 }).toBeGreaterThan(
-    beforeNavigation,
-  );
+  await expect
+    .poll(() => stateRequests, { timeout: 1500 })
+    .toBeGreaterThan(beforeNavigation);
   const card = page.locator("article").filter({
     has: page.getByRole("heading", { name: "Test satellite", exact: true }),
   });
@@ -218,6 +223,36 @@ try {
   await page.getByRole("button", { name: "View logs", exact: true }).click();
   const logDialog = page.getByRole("dialog", { name: "Job logs", exact: true });
   await expect(logDialog.locator("pre")).toHaveText(job.logs);
+  job.sources = [
+    {
+      sourceId: "ready",
+      name: "Ready satellite",
+      optional: false,
+      status: "ready",
+      imageId: "input-1",
+      observationTime: job.targetTime,
+    },
+    {
+      sourceId: "optional",
+      name: "Optional satellite",
+      optional: true,
+      status: "skipped",
+      message: "No observation within the selected window",
+    },
+  ];
+  job.stageStartedAt = job.startedAt;
+  job.lastActivityAt = job.startedAt;
+  await logDialog.getByRole("button", { name: "Refresh progress" }).click();
+  await expect(
+    logDialog.getByText("1 of 2 satellite inputs ready"),
+  ).toBeVisible();
+  await expect(
+    logDialog.getByRole("link", { name: "Inspect input image" }),
+  ).toHaveAttribute("href", "/api/images/input-1");
+  await logDialog.getByText("Why skipped?", { exact: true }).click();
+  await expect(
+    logDialog.getByText("No observation within the selected window"),
+  ).toBeVisible();
   await logDialog.getByLabel("Follow output").uncheck();
   await logDialog.locator("pre").evaluate((element) => {
     element.scrollTop = 0;
@@ -331,6 +366,19 @@ try {
     page.getByRole("heading", { name: "Files", exact: true }),
   ).toBeVisible();
   expect(documentLoads).toBe(1);
+  job.status = "running";
+  job.finishedAt = undefined;
+  await nav("Jobs").click();
+  await page.getByRole("button", { name: "View logs", exact: true }).click();
+  await logDialog
+    .getByRole("button", { name: "Cancel stitch", exact: true })
+    .click();
+  await expect(
+    logDialog.getByText("Cancelled by operator", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    logDialog.getByRole("button", { name: "Cancel stitch", exact: true }),
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
   console.log(
     "Auto-refresh passed: images, source validation/testing, jobs, live logs, retained scroll, close races, file updates/deletion, draft preservation, recovery, history, and session expiry without page reload.",

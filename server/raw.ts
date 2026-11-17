@@ -201,7 +201,7 @@ export async function acquireRaw(
       return image;
     } catch (error) {
       signal.throwIfAborted();
-      last = String(error);
+      last = error instanceof Error ? error.message : String(error);
       log(`${last}\n`);
     } finally {
       await rm(work, { recursive: true, force: true });

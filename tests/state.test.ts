@@ -116,6 +116,31 @@ test("dashboard polling responses are never cached", async () => {
   }
 });
 
+test("API errors are readable and never expose server paths", async () => {
+  const app = await fixture();
+  try {
+    const invalid = await fetch(`${app.base}/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pollMinutes: -5 }),
+    });
+    assert.equal(invalid.status, 400);
+    const { error } = (await invalid.json()) as { error: string };
+    assert.match(error, /^pollMinutes: /);
+    assert.doesNotMatch(error, /[[{]/);
+
+    app.store.put("images", "gone", {
+      id: "gone",
+      path: path.join(app.store.root, "cache", "gone.png"),
+    });
+    const missing = await fetch(`${app.base}/images/gone`);
+    assert.equal(missing.status, 404);
+    assert.deepEqual(await missing.json(), { error: "Not found." });
+  } finally {
+    await app.close();
+  }
+});
+
 test("source test activity appears in state and clears when acquisition finishes", async () => {
   const app = await fixture();
   const png = await sharp({

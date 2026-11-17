@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { profileSchema, sourceSchema, settingsSchema } from "../shared/types";
+import { profileSchema, sourceSchema } from "../shared/types";
 import type {
   AuthState,
   Job,
   JobSummary,
   ManagerState,
   Profile,
-  Settings,
   SourceRecord,
 } from "../shared/types";
 import { api, ApiError } from "./api";
@@ -16,6 +15,22 @@ import { Dialog } from "./Dialog";
 import { SourceEditor, ProfileEditor } from "./Editors";
 import { HourPicker } from "./HourPicker";
 import { FileManager } from "./FileManager";
+import { JobLogs } from "./JobLogs";
+import { StitchProgress } from "./StitchProgress";
+import { ImageTools } from "./ImageTools";
+import { SettingsPage } from "./SettingsPage";
+import {
+  Empty,
+  FilterCount,
+  Icon,
+  JobStages,
+  Status,
+  active,
+  date,
+  duration,
+  relative,
+  stageName,
+} from "./ui";
 import "./style.css";
 
 const pages = [
@@ -24,398 +39,20 @@ const pages = [
   "Profiles",
   "Jobs",
   "Files",
+  "Image Tools",
   "Settings",
 ] as const;
 type Page = (typeof pages)[number];
 const readPage = (): Page =>
-  pages.find((p) => p.toLowerCase() === location.hash.slice(1).split("?")[0]) ??
-  "Overview";
-const date = (value?: string) =>
-  value
-    ? new Date(value).toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
-    : "—";
-const relative = (value: number | string) => {
-  const seconds = Math.max(
-    0,
-    Math.floor((Date.now() - +new Date(value)) / 1000),
-  );
-  return seconds < 10
-    ? "just now"
-    : seconds < 60
-      ? `${seconds}s ago`
-      : seconds < 3600
-        ? `${Math.floor(seconds / 60)}m ago`
-        : seconds < 86400
-          ? `${Math.floor(seconds / 3600)}h ago`
-          : `${Math.floor(seconds / 86400)}d ago`;
-};
-const active = (job: JobSummary) =>
-  job.status === "queued" || job.status === "running";
-const stageName = (job: JobSummary) =>
-  job.status === "queued"
-    ? "Queued"
-    : job.status !== "running"
-      ? {
-          succeeded: "Complete",
-          failed: "Failed",
-          cancelled: "Cancelled",
-          interrupted: "Interrupted",
-        }[job.status]
-      : {
-          acquiring: "Fetching imagery",
-          preparing: "Preparing images",
-          composing: "Creating composite",
-          publishing: "Publishing",
-        }[job.stage ?? "acquiring"];
+  pages.find(
+    (p) =>
+      p.toLowerCase().replaceAll(" ", "-") ===
+      location.hash.slice(1).split("?")[0],
+  ) ?? "Overview";
 function newId() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
-  );
-}
-function Icon({ name, size = 20 }: { name: string; size?: number }) {
-  const paths: Record<string, React.ReactNode> = {
-    Overview: (
-      <>
-        <rect x="3" y="3" width="7" height="7" rx="1.5" />
-        <rect x="14" y="3" width="7" height="7" rx="1.5" />
-        <rect x="3" y="14" width="7" height="7" rx="1.5" />
-        <rect x="14" y="14" width="7" height="7" rx="1.5" />
-      </>
-    ),
-    Sources: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <ellipse cx="12" cy="12" rx="4" ry="9" />
-        <path d="M3 12h18M5 6h14M5 18h14" />
-      </>
-    ),
-    Profiles: (
-      <>
-        <path d="m12 3 10 5-10 5L2 8l10-5ZM2 12l10 5 10-5M2 16l10 5 10-5" />
-      </>
-    ),
-    Jobs: (
-      <>
-        <path d="M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01" />
-      </>
-    ),
-    Files: (
-      <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
-    ),
-    Settings: (
-      <>
-        <path d="M4 7h16M4 17h16" />
-        <circle cx="9" cy="7" r="3" />
-        <circle cx="16" cy="17" r="3" />
-      </>
-    ),
-    arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
-    play: <path d="m8 4 12 8-12 8V4Z" />,
-    plus: <path d="M12 5v14M5 12h14" />,
-    clock: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </>
-    ),
-    check: <path d="m5 12 4 4L19 6" />,
-  };
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths[name] ?? paths.Overview}
-    </svg>
-  );
-}
-function Status({
-  children,
-  tone = "neutral",
-}: {
-  children: React.ReactNode;
-  tone?: string;
-}) {
-  return (
-    <span className={`status-badge ${tone}`}>
-      <span className="status-dot" />
-      {children}
-    </span>
-  );
-}
-function Empty({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="empty-state">
-      <Icon name="Sources" size={32} />
-      <h3>{title}</h3>
-      <div className="muted">{children}</div>
-    </div>
-  );
-}
-function JobStages({ job }: { job: JobSummary }) {
-  const stages = ["Queued", "Fetch", "Prepare", "Compose", "Publish"];
-  const step =
-    job.status === "succeeded"
-      ? 5
-      : job.status === "queued"
-        ? 0
-        : { acquiring: 1, preparing: 2, composing: 3, publishing: 4 }[
-            job.stage ?? "acquiring"
-          ];
-  return (
-    <ol className="job-stages" aria-label="Composition stages">
-      {stages.map((name, i) => (
-        <li
-          key={name}
-          className={
-            i < step ? "done" : i === step && active(job) ? "current" : ""
-          }
-          aria-current={i === step && active(job) ? "step" : undefined}
-        >
-          <span>{i < step ? <Icon name="check" size={12} /> : i + 1}</span>
-          {name}
-        </li>
-      ))}
-    </ol>
-  );
-}
-function JobLogs({
-  id,
-  onClose,
-  onUnauthorized,
-}: {
-  id: string;
-  onClose: () => void;
-  onUnauthorized: () => void;
-}) {
-  const resource = useAutoRefresh(`job:${id}`, (signal) =>
-    api<Job>(`/jobs/${encodeURIComponent(id)}`, "GET", undefined, signal),
-  );
-  const [follow, setFollow] = useState(true);
-  const output = useRef<HTMLPreElement>(null);
-  useEffect(() => {
-    if (resource.error instanceof ApiError && resource.error.status === 401)
-      onUnauthorized();
-  }, [resource.error, onUnauthorized]);
-  useEffect(() => {
-    if (follow && output.current)
-      output.current.scrollTop = output.current.scrollHeight;
-  }, [resource.data?.logs, follow]);
-  return (
-    <Dialog title="Job logs" onClose={onClose} className="logs-dialog">
-      {resource.data && (
-        <>
-          <div className="section-heading">
-            <div>
-              <h3>{resource.data.profileName}</h3>
-              <p>{resource.data.message}</p>
-            </div>
-            <Status tone={resource.data.status}>
-              {stageName(resource.data)}
-            </Status>
-          </div>
-          <JobStages job={resource.data} />
-        </>
-      )}
-      <div className="logs-toolbar">
-        <span className="muted">Updates automatically every 4 seconds</span>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={follow}
-            onChange={(e) => setFollow(e.target.checked)}
-          />
-          Follow output
-        </label>
-      </div>
-      {resource.error && (
-        <p role="alert" className="inline-error">
-          {resource.error.message}{" "}
-          {resource.error instanceof ApiError && resource.error.status === 404
-            ? "This job may have expired from history."
-            : "Reconnecting automatically."}
-        </p>
-      )}
-      <pre
-        className="log-output"
-        ref={output}
-        tabIndex={0}
-        aria-label="Process output"
-      >
-        {resource.data?.logs ||
-          (resource.loading ? "Loading logs…" : "No process output yet.")}
-      </pre>
-    </Dialog>
-  );
-}
-function SettingsPage({
-  value,
-  locked,
-  onSave,
-  onLogout,
-  loginRequired,
-}: {
-  value: Settings;
-  locked: boolean;
-  onSave: (value: Settings) => Promise<void>;
-  onLogout: () => Promise<void>;
-  loginRequired: boolean;
-}) {
-  const [draft, setDraft] = useState<Settings>();
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const groups = [
-    {
-      title: "Automation",
-      description:
-        "Scheduled profiles run while the server is running, even when this browser is closed.",
-      fields: [["pollMinutes", "Composition interval (minutes)", 1, 180]],
-    },
-    {
-      title: "Storage & history",
-      description:
-        "Keep the latest successful output per profile and choose how long to retain temporary imagery and job history.",
-      fields: [
-        ["cacheHours", "Source cache (hours)", 1, 48],
-        ["logDays", "Job retention (days)", 1, 90],
-      ],
-    },
-    {
-      title: "Processing limits",
-      description: "These limits apply to future operations.",
-      fields: [
-        ["processTimeoutMinutes", "Composition timeout (minutes)", 1, 120],
-        ["downloadTimeoutSeconds", "Download timeout (seconds)", 2, 300],
-        ["maxDownloadMb", "Maximum image size (MB)", 1, 500],
-      ],
-    },
-  ];
-  return (
-    <form
-      className="settings-form panel"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError("");
-        try {
-          const result = settingsSchema.safeParse(draft ?? value);
-          if (!result.success)
-            throw new Error(
-              result.error.issues.map((i) => i.message).join(". "),
-            );
-          await onSave(result.data);
-          setDraft(undefined);
-        } catch (e) {
-          setError((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {groups.map((group) => (
-        <section className="editor-section" key={group.title}>
-          <div className="section-copy">
-            <h2>{group.title}</h2>
-            <p>{group.description}</p>
-          </div>
-          <div className="form-grid">
-            {group.fields.map(([key, label, min, max]) => (
-              <label className="field" key={key}>
-                <span>{label}</span>
-                <input
-                  type="number"
-                  required
-                  min={min}
-                  max={max}
-                  step={key === "cacheHours" ? "any" : 1}
-                  value={(draft ?? value)[key as keyof Settings]}
-                  disabled={busy}
-                  onChange={(e) =>
-                    setDraft({
-                      ...(draft ?? value),
-                      [key]: Number(e.target.value),
-                    })
-                  }
-                />
-              </label>
-            ))}
-          </div>
-        </section>
-      ))}
-      {locked && (
-        <p className="inline-notice">
-          Configuration is locked while processing, testing, or cleanup is
-          active. You can save when it finishes.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="inline-error">
-          {error}
-        </p>
-      )}
-      <div className="editor-footer">
-        <span className="muted">
-          {draft ? "You have unsaved changes" : "Settings are up to date"}
-        </span>
-        <div className="actions">
-          <button
-            type="button"
-            disabled={!draft || busy}
-            onClick={() => {
-              setDraft(undefined);
-              setError("");
-            }}
-          >
-            Discard changes
-          </button>
-          <button className="primary" disabled={busy || locked || !draft}>
-            {busy ? "Saving…" : "Save settings"}
-          </button>
-        </div>
-      </div>
-      <div className="settings-access">
-        <span className="muted">
-          {loginRequired
-            ? "Password login enabled"
-            : "Password login is not enabled"}
-        </span>
-        {loginRequired && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await onLogout();
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Log out
-          </button>
-        )}
-      </div>
-    </form>
   );
 }
 
@@ -484,6 +121,10 @@ function App() {
   }, [manager.error]);
   const auth = manager.data?.auth;
   const state = manager.data?.state;
+  const activeCount = state?.jobs.filter(active).length ?? 0;
+  useEffect(() => {
+    document.title = `${activeCount ? `(${activeCount}) ` : ""}${page} · GSICM`;
+  }, [page, activeCount]);
   const unauthorized = React.useCallback(() => {
     setExpired(true);
   }, []);
@@ -551,7 +192,7 @@ function App() {
       </p>
     ) : null;
   const navigate = (next: Page) => {
-    location.hash = next.toLowerCase();
+    location.hash = next.toLowerCase().replaceAll(" ", "-");
   };
   // Names are required only on save; construct the blank draft without parsing those fields.
   const addSource = () =>
@@ -665,6 +306,21 @@ function App() {
       : !state.canRunJobs
         ? "Wait for source testing or cleanup to finish."
         : "";
+  // Jobs arrive newest first, so a later success hides an older failure.
+  const failureNotice = (p: Profile) => {
+    const last = state.jobs.find((j) => j.profileId === p.id && !active(j));
+    if (!last || (last.status !== "failed" && last.status !== "interrupted"))
+      return null;
+    return (
+      <p className="inline-error last-failure" role="status">
+        Last run {last.status} {relative(last.finishedAt ?? last.startedAt)}:{" "}
+        {last.message}{" "}
+        <button className="text-button" onClick={() => setJobId(last.id)}>
+          View logs
+        </button>
+      </p>
+    );
+  };
   const runButtons = (p: ManagerState["profiles"][number]) => {
     const key = `run:${p.id}`;
     const existing = runningJobs.find((j) => j.profileId === p.id);
@@ -704,6 +360,12 @@ function App() {
           </p>
         )}
         {feedback(key)}
+        {existing && (
+          <>
+            <p className="job-message">{existing.message}</p>
+            <StitchProgress job={existing} />
+          </>
+        )}
       </>
     );
   };
@@ -718,10 +380,13 @@ function App() {
       </div>
       <p className="job-message">{job.message}</p>
       {active(job) && <JobStages job={job} />}
+      <StitchProgress job={job} />
       <div className="job-footer">
         <span className="muted">
           Started {date(job.startedAt)}
-          {job.finishedAt ? ` · Finished ${date(job.finishedAt)}` : ""}
+          {job.finishedAt
+            ? ` · Finished ${date(job.finishedAt)} · Took ${duration(job.startedAt, job.finishedAt)}`
+            : ""}
         </span>
         <div className="actions">
           <button onClick={() => setJobId(job.id)}>View logs</button>
@@ -756,6 +421,8 @@ function App() {
     Profiles: "Choose what to create and how it should look.",
     Jobs: "Follow your composites from acquisition to publication.",
     Files: "Browse your generated composites and cached imagery.",
+    "Image Tools":
+      "Prepare images for sharing with compression, resizing, and conversion.",
     Settings: "Tune automation, storage, and processing.",
   };
   const connectionLabel = {
@@ -808,7 +475,7 @@ function App() {
         <nav aria-label="Main navigation">
           {pages.map((name) => (
             <a
-              href={`#${name.toLowerCase()}`}
+              href={`#${name.toLowerCase().replaceAll(" ", "-")}`}
               key={name}
               aria-label={name}
               className={page === name ? "selected" : ""}
@@ -982,13 +649,13 @@ function App() {
                           <div className={`image-area ${p.projection}`}>
                             {output ? (
                               <a
-                                href={`/api/outputs/${encodeURIComponent(p.id)}?v=${output.jobId}`}
+                                href={`/api/outputs/${encodeURIComponent(p.id)}?v=${output.jobId}-${encodeURIComponent(output.publishedAt)}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 aria-label={`Open ${p.name} image`}
                               >
                                 <img
-                                  src={`/api/outputs/${encodeURIComponent(p.id)}?v=${output.jobId}`}
+                                  src={`/api/outputs/${encodeURIComponent(p.id)}?v=${output.jobId}-${encodeURIComponent(output.publishedAt)}`}
                                   alt={p.name}
                                 />
                                 <span className="image-open">
@@ -1069,6 +736,7 @@ function App() {
                                   : "No image published yet"}
                               </p>
                             )}
+                            {failureNotice(p)}
                             {runButtons(p)}
                           </div>
                         </article>
@@ -1248,18 +916,15 @@ function App() {
                 </div>
               </div>
               {(sourceSearch || sourceFilter !== "all") && (
-                <p className="muted filter-count" role="status">
-                  Showing {shownSources.length} of {state.sources.length} sources
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setSourceSearch("");
-                      setSourceFilter("all");
-                    }}
-                  >
-                    Clear filters
-                  </button>
-                </p>
+                <FilterCount
+                  shown={shownSources.length}
+                  total={state.sources.length}
+                  noun="sources"
+                  onClear={() => {
+                    setSourceSearch("");
+                    setSourceFilter("all");
+                  }}
+                />
               )}
               {feedback("presets")}
               {lockedReason && <p className="inline-notice">{lockedReason}</p>}
@@ -1468,6 +1133,7 @@ function App() {
                         </ul>
                       </details>
                     )}
+                    {failureNotice(p)}
                     {runButtons(p)}
                     <div className="card-footer">
                       <button
@@ -1542,18 +1208,15 @@ function App() {
                 </span>
               </div>
               {(jobSearch || jobFilter !== "all") && (
-                <p className="muted filter-count" role="status">
-                  Showing {shownJobs.length} of {state.jobs.length} jobs
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setJobSearch("");
-                      setJobFilter("all");
-                    }}
-                  >
-                    Clear filters
-                  </button>
-                </p>
+                <FilterCount
+                  shown={shownJobs.length}
+                  total={state.jobs.length}
+                  noun="jobs"
+                  onClear={() => {
+                    setJobSearch("");
+                    setJobFilter("all");
+                  }}
+                />
               )}
               {shownJobs.some(active) && (
                 <section className="jobs-section">
@@ -1605,6 +1268,7 @@ function App() {
               onUnauthorized={unauthorized}
             />
           )}
+          {page === "Image Tools" && <ImageTools />}
           {page === "Settings" && (
             <SettingsPage
               value={state.settings}

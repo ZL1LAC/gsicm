@@ -53,6 +53,8 @@ Source tests validate decoding, dimensions, and timestamp compatibility. Visual 
 
 Overview puts the latest imagery beside current activity and setup issues. Use **New profile** to create a map, globe, or full-disc profile. Jobs and Files support search and filters; job logs can follow new output automatically. Configuration forms keep unsaved changes while data updates.
 
+Use **View progress** during a stitch to see each satellite input's status, observation time, and preview. The progress view shows elapsed time, time in the current stage, and recent process activity; skipped or failed inputs include expandable explanations. You can refresh progress or cancel the stitch from this view, then open the latest composite after a successful run.
+
 State, visible files, and open job logs refresh every four seconds, and immediately when the browser reconnects or returns to the foreground. The connection indicator shows freshness; temporary failures retain the last successful data and retry automatically. Dashboard navigation uses bookmarkable URL fragments.
 
 ## Defaults and files
@@ -81,3 +83,5 @@ npm run smoke
 Unit/integration tests cover HTTP, FTP, certificate-verified FTPS, anonymous paginated S3, timestamps, invalid images, retries, cancellation, recovery, cleanup, and API validation. Smoke tests require the manually supplied Sanchez distribution in `bin/` and run it for both projections against explicitly synthetic full-disc fixtures in temporary storage. Refresh tests exercise polling, timeout/recovery, request races, live logs/images/files, session expiry, and unsaved drafts using mocked browser requests. Browser workflow tests use an isolated database and synthetic imagery; install Chromium with `npx playwright install chromium` if needed.
 
 Raw scientific decoding is supported for the verified public GOES-18/19, GK-2A, and Himawari-9 products. Meteosat Europe/Africa and Indian Ocean coverage remain setup blockers because no clean, account-free, timestamped feed has been verified. Provider credentials, live feed guarantees, polar cloud observations, historical archives, and OS startup integration remain outside this release.
+
+Meteosat-9 Indian Ocean IR10.8 imagery is supported through the `eumetview-iodc` preset. The manager downloads the latest EUMETView observation within the profile time tolerance and reprojects its geographic image to the Sanchez satellite grid using the existing decoder environment. It is a rendered infrared visualization; see [feed verification](docs/FEEDS.md) for tested access and coverage limits.

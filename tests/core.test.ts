@@ -206,11 +206,30 @@ test("restart recovery, retention and cleanup containment", async () => {
     status: "running",
     message: "",
     logs: "",
+    sources: [
+      {
+        sourceId: "ready",
+        name: "Ready",
+        optional: false,
+        status: "ready",
+        imageId: "saved",
+      },
+      {
+        sourceId: "pending",
+        name: "Pending",
+        optional: false,
+        status: "fetching",
+      },
+    ],
   };
   store.put("jobs", job.id, job);
   store.db.close();
   store = new Store(directory);
   assert.equal(store.get<Job>("jobs", "old")?.status, "interrupted");
+  assert.deepEqual(
+    store.get<Job>("jobs", "old")?.sources?.map((source) => source.status),
+    ["ready", "skipped"],
+  );
   await mkdir(path.join(directory, "cache"));
   const file = path.join(directory, "cache", "old.png");
   await writeFile(file, "old");
@@ -476,4 +495,53 @@ test("satellite disk profiles require exactly one source and use geostationary r
     blockers({ ...disk, optionalSourceIds: ["two"] }, [])[0],
     /exactly one/,
   );
+});
+
+test("Elektro handover removes N2 references, preserves history and migrates N3 once", async () => {
+  const directory = await temp();
+  let store = new Store(directory);
+  try {
+    store.delete("meta", "elektro-handover-2026");
+    store.put("sources", "electro-l2", { ...source, id: "electro-l2" });
+    store.put("sources", "electro-l3", {
+      ...source,
+      id: "electro-l3",
+      longitude: 76,
+    });
+    store.put("profiles", "test", {
+      ...profile,
+      sourceIds: ["fixture", "electro-l2"],
+      optionalSourceIds: ["electro-l2", "electro-l3"],
+    });
+    store.put("images", "historical", { sourceId: "electro-l2" });
+    store.db.close();
+    store = new Store(directory);
+    assert.equal(store.get("sources", "electro-l2"), undefined);
+    assert.deepEqual(store.profiles().find((p) => p.id === "test")?.sourceIds, [
+      "fixture",
+    ]);
+    assert.deepEqual(
+      store.profiles().find((p) => p.id === "test")?.optionalSourceIds,
+      ["electro-l3"],
+    );
+    assert.equal(
+      store.sources().find((s) => s.id === "electro-l3")?.longitude,
+      -14.5,
+    );
+    assert.ok(store.get("images", "historical"));
+    store.put("sources", "electro-l3", {
+      ...source,
+      id: "electro-l3",
+      longitude: 42,
+    });
+    store.db.close();
+    store = new Store(directory);
+    assert.equal(
+      store.sources().find((s) => s.id === "electro-l3")?.longitude,
+      42,
+    );
+  } finally {
+    store.db.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });

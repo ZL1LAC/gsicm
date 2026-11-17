@@ -92,3 +92,41 @@ test("caption uses job times, escapes names, and preserves image below broadcast
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("caption renders distinct letter shapes on hosts without system fonts", async () => {
+  const profile = profileSchema.parse({
+    id: "map",
+    name: "Test",
+    enabled: false,
+    sourceIds: [],
+    projection: "map",
+    format: "png",
+    underlay: "test.jpg",
+  });
+  const inkWidth = async (name: string) => {
+    const band = captionBand(
+      1024,
+      { ...profile, name },
+      "2026-11-16T05:20:00Z",
+      [],
+      [],
+      [],
+    );
+    const { data, info } = await sharp(Buffer.from(band.svg))
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const columns = new Set<number>();
+    for (let y = 0; y < info.height; y++)
+      for (let x = 0; x < info.width; x++) {
+        const i = (y * info.width + x) * info.channels;
+        // Only the profile title uses near-white; other rows have tinted text.
+        if (data[i] > 230 && data[i + 1] > 230 && data[i + 2] > 230)
+          columns.add(x);
+      }
+    assert.ok(columns.size > 0, "Profile title has visible glyphs");
+    return Math.max(...columns) - Math.min(...columns) + 1;
+  };
+  // Missing-character boxes render both strings with the same width.
+  assert.ok((await inkWidth("WWW")) > 2 * (await inkWidth("iii")));
+});
