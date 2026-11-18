@@ -271,6 +271,9 @@ test("argument arrays and process cancellation, timeout and failures", async () 
     ).includes("-a"),
   );
   assert.equal(args[args.indexOf("-m") + 1], "1");
+  const rendererTolerance = Number(args[args.indexOf("-d") + 1]);
+  assert.ok(profile.toleranceMinutes < rendererTolerance);
+  assert.equal(rendererTolerance, profile.toleranceMinutes + 1);
   assert.equal(args[args.indexOf("-T") + 1], "2020-01-01T12:00:00");
   assert.ok(
     sanchezArgs(

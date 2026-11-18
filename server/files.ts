@@ -22,7 +22,8 @@ export async function listFiles(store: Store) {
       throw error;
     }
     for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (!entry.isFile()) continue;
+      if (!entry.isFile() || /\.clean\.(?:png|jpe?g)$/i.test(entry.name))
+        continue;
       const filename = path.join(directory, entry.name);
       let stat;
       try {
@@ -33,7 +34,8 @@ export async function listFiles(store: Store) {
       }
       if (!stat.isFile() || stat.isSymbolicLink()) continue;
       const output = store
-        .outputs()
+        .outputHistory()
+        .concat(store.outputs())
         .find((o) => path.resolve(o.path) === filename);
       const image = store
         .images()
@@ -50,7 +52,7 @@ export async function listFiles(store: Store) {
             : undefined,
         observationTime: output?.targetTime ?? image?.observationTime,
         preview: output
-          ? `/api/outputs/${encodeURIComponent(output.profileId)}?v=${output.jobId}`
+          ? `/api/outputs/${encodeURIComponent(output.profileId)}/history/${encodeURIComponent(output.jobId)}`
           : image
             ? `/api/images/${encodeURIComponent(image.id)}`
             : undefined,
@@ -67,9 +69,17 @@ export async function deleteFile(store: Store, folder: string, name: string) {
   if (!stat.isFile() || stat.isSymbolicLink())
     throw new Error("Only regular files can be deleted.");
   await unlink(filename);
-  for (const output of store.outputs())
-    if (path.resolve(output.path) === filename)
-      store.delete("outputs", output.profileId);
+  for (const output of [...store.outputHistory(), ...store.outputs()])
+    if (path.resolve(output.path) === filename) {
+      if (output.jobId) store.delete("outputHistory", output.jobId);
+      const latest = store.get<typeof output>("outputs", output.profileId);
+      if (latest && path.resolve(latest.path) === filename)
+        store.delete("outputs", output.profileId);
+      if (output.cleanPath)
+        await unlink(output.cleanPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+    }
   for (const image of store.images())
     if (path.resolve(image.path) === filename) {
       store.delete("images", image.id);

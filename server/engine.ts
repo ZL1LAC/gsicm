@@ -66,7 +66,9 @@ export function sanchezArgs(
     "-T",
     target.replace(/\.\d{3}Z$/, ""),
     "-d",
-    String(profile.toleranceMinutes),
+    // Acquisition accepts the tolerance boundary; Sanchez uses a strict < check.
+    // Only acquired, validated inputs are staged, so allow one extra minute (the renderer accepts integer minutes).
+    String(profile.toleranceMinutes + 1),
     "-m",
     String(profile.sourceIds.length),
     "-r",
@@ -414,6 +416,10 @@ export class Engine {
         this.store.settings().processTimeoutMinutes * 60000,
         (text) => this.log(job.id, text),
       );
+      if (!(await stat(output).catch(() => undefined))?.isFile())
+        throw new Error(
+          "Sanchez completed without producing a composite. Check the renderer logs for excluded inputs or timestamp mismatches.",
+        );
       this.progress(
         job.id,
         "publishing",
@@ -429,18 +435,21 @@ export class Engine {
         images,
         profile.projection === "disk" ? chosen : sources,
       );
-      await rename(annotated, output);
-      const dimensions = await inspectImage(output);
+      const dimensions = await inspectImage(annotated);
       controller.signal.throwIfAborted();
       const directory = path.join(this.store.root, "outputs");
       await mkdir(directory, { recursive: true });
       const published = path.join(directory, `${job.id}.${profile.format}`);
-      await rename(output, published);
+      const clean = path.join(directory, `${job.id}.clean.${profile.format}`);
+      await rename(output, clean);
+      await rename(annotated, published);
       const previous = this.store.get<PublishedOutput>("outputs", profile.id);
       const record: PublishedOutput = {
         profileId: profile.id,
         jobId: job.id,
         path: published,
+        cleanPath: clean,
+        projection: profile.projection,
         publishedAt: new Date().toISOString(),
         targetTime: job.targetTime,
         observations: chosen.map((s, i) => ({
@@ -448,11 +457,14 @@ export class Engine {
           satellite: s.satellite,
           time: images[i].observationTime,
           attribution: s.attribution,
+          longitude: images[i].geometry?.longitude ?? s.longitude,
         })),
         ...dimensions,
       };
+      if (previous?.jobId)
+        this.store.put("outputHistory", previous.jobId, previous);
+      this.store.put("outputHistory", job.id, record);
       this.store.put("outputs", profile.id, record);
-      if (previous) await rm(previous.path, { force: true }).catch(() => {});
       this.finish(job.id, "succeeded", "Published complete composite");
     } catch (error) {
       this.finish(
@@ -526,7 +538,10 @@ export async function cleanup(store: Store, now = new Date()) {
       store.delete("jobs", job.id);
   const keep = new Set([
     ...store.images().map((i) => i.path),
-    ...store.outputs().map((o) => o.path),
+    ...[...store.outputs(), ...store.outputHistory()].flatMap((o) => [
+      o.path,
+      ...(o.cleanPath ? [o.cleanPath] : []),
+    ]),
   ]);
   for (const folder of ["cache", "outputs", "work"]) {
     const dir = path.join(store.root, folder);

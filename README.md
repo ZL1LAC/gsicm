@@ -55,6 +55,8 @@ Overview puts the latest imagery beside current activity and setup issues. Use *
 
 Use **View progress** during a stitch to see each satellite input's status, observation time, and preview. The progress view shows elapsed time, time in the current stage, and recent process activity; skipped or failed inputs include expandable explanations. You can refresh progress or cancel the stitch from this view, then open the latest composite after a successful run.
 
+Open an overview image to zoom and pan, inspect source times and offsets, browse retained composites, and play them in sequence. New composites offer attributed and map-only downloads, plus a JSON source-details file. The optional map coverage guide estimates satellite visibility from nominal geostationary geometry; it does not show actual blend seams or account for source cropping. Older composites remain viewable but do not have map-only exports or coverage guides.
+
 State, visible files, and open job logs refresh every four seconds, and immediately when the browser reconnects or returns to the foreground. The connection indicator shows freshness; temporary failures retain the last successful data and retry automatically. Dashboard navigation uses bookmarkable URL fragments.
 
 ## Defaults and files
@@ -62,7 +64,7 @@ State, visible files, and open job logs refresh every four seconds, and immediat
 - Poll every 10 minutes; target the previous completed interval boundary; accept observations within ±30 minutes.
 - Map and globe at 4 km, JPEG, globe centred at 180°; bundled underlay, configurable colour controls.
 - One compositor at a time. Downloads use temporary files, bounded retries, size limits, and timeouts. Queued/running jobs become interrupted after a restart.
-- Keep only the latest successful output per profile, a two-hour acquisition cache, and seven days of job history/logs. Cache cleanup waits while processing or source testing is active. File cleanup is confined to manager-owned directories.
+- Retain successful composites until deleted in Files, a two-hour acquisition cache, and seven days of job history/logs. Retained composites include both attributed and map-only images, so storage use grows over time. Cache cleanup waits while processing or source testing is active. File cleanup is confined to manager-owned directories.
 - State lives in `data/manager.sqlite`; cache, work files, and outputs live beneath `data/`. Preserve this directory to keep configuration. `GSICM_DATA_DIR` overrides it for isolated instances/tests. `PORT` overrides port 3210.
 - The web server listens on loopback only. Optional password login is for local dashboard access, not remote/public deployment.
 

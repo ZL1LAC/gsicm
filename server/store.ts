@@ -81,6 +81,9 @@ export class Store {
   outputs() {
     return this.list<PublishedOutput>("outputs");
   }
+  outputHistory() {
+    return this.list<PublishedOutput>("outputHistory");
+  }
   removeObsoletePlaceholders() {
     const obsoleteIds = new Set([
       "goes-east",

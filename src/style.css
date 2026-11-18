@@ -1520,18 +1520,30 @@ summary {
     display: none;
   }
   .sidebar nav {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    display: flex;
     gap: 4px;
-    margin-top: 18px;
+    margin: 16px -16px 0;
+    padding: 4px 16px 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #60447c transparent;
+    scroll-padding-inline: 16px;
+    position: relative;
   }
   .sidebar nav a {
+    flex: 0 0 auto;
+    min-width: 72px;
+    min-height: 58px;
     flex-direction: column;
     gap: 6px;
-    font-size: 9px;
-    padding: 8px 2px;
-    border-radius: 6px;
+    font-size: 11px;
+    padding: 10px 12px;
+    border-radius: 8px;
     position: relative;
+    white-space: nowrap;
+  }
+  .sidebar nav a:focus-visible {
+    outline-offset: -2px;
   }
   .sidebar nav svg {
     width: 17px;
@@ -1539,8 +1551,8 @@ summary {
   }
   .nav-count {
     position: absolute;
-    right: 0;
-    top: 0;
+    right: 4px;
+    top: 3px;
     font-size: 8px;
     padding: 1px 4px;
   }
@@ -1552,6 +1564,7 @@ summary {
     margin-bottom: 20px;
     align-items: flex-start;
     gap: 12px;
+    flex-direction: column;
   }
   .page-header .eyebrow {
     font-size: 7px;
@@ -1561,13 +1574,16 @@ summary {
     font-size: 27px;
   }
   .page-header p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .connection {
     margin-top: 1px;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
   }
   .connection > span:last-child {
-    font-size: 8px;
+    font-size: 10px;
   }
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1985,4 +2001,55 @@ summary {
   .image-tools {
     grid-template-columns: 1fr;
   }
+}
+
+.output-view-button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.composite-dialog {
+  width: min(1400px, calc(100% - 32px));
+}
+.composite-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.composite-viewport {
+  overflow: auto;
+  max-height: 65dvh;
+  background: #080d13;
+}
+.composite-image {
+  position: relative;
+}
+.composite-viewport img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.coverage-guide {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.coverage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.composite-downloads {
+  margin-top: 16px;
+}
+.composite-dialog .image-details {
+  margin-top: 16px;
 }

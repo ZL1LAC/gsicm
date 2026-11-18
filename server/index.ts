@@ -105,7 +105,12 @@ export async function createApp(
         .list<Job>("jobs")
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
         .map(({ logs, ...j }) => j),
-      outputs: store.outputs().map(({ path: _, ...o }) => o),
+      outputs: store
+        .outputs()
+        .map(({ path: _, cleanPath, ...o }) => ({
+          ...o,
+          hasClean: !!cleanPath,
+        })),
       underlays,
       activeJob: engine.active?.id,
       locked: locked(),
@@ -461,6 +466,39 @@ export async function createApp(
   app.post("/api/jobs/:id/cancel", (req, res) => {
     engine.cancel(req.params.id);
     res.json({ ok: true });
+  });
+  app.get("/api/outputs/:id/history", (req, res) => {
+    const latest = store.get<PublishedOutput>("outputs", req.params.id);
+    const records = store
+      .outputHistory()
+      .filter((o) => o.profileId === req.params.id);
+    if (latest && !records.some((o) => o.jobId === latest.jobId))
+      records.push(latest);
+    res.json(
+      records
+        .sort((a, b) => a.targetTime.localeCompare(b.targetTime))
+        .map(({ path: _, cleanPath, ...o }) => ({
+          ...o,
+          hasClean: !!cleanPath,
+        })),
+    );
+  });
+  app.get("/api/outputs/:id/history/:jobId", (req, res) => {
+    const latest = store.get<PublishedOutput>("outputs", req.params.id);
+    const output =
+      store.get<PublishedOutput>("outputHistory", req.params.jobId) ??
+      (latest?.jobId === req.params.jobId ? latest : undefined);
+    if (!output || output.profileId !== req.params.id)
+      return res.sendStatus(404);
+    const file = req.query.clean === "1" ? output.cleanPath : output.path;
+    if (!file)
+      return res
+        .status(404)
+        .json({
+          error: "A map-only export is not available for this older composite.",
+        });
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(file);
   });
   app.get("/api/outputs/:id", (req, res) => {
     const output = store.get<PublishedOutput>("outputs", req.params.id);

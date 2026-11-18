@@ -137,19 +137,24 @@ export interface PublishedOutput {
   jobId: string;
   path: string;
   publishedAt: string;
+  cleanPath?: string;
+  projection?: Profile["projection"];
   targetTime: string;
   observations: {
     sourceId: string;
     satellite: string;
     time: string;
     attribution: string;
+    longitude?: number;
   }[];
   width: number;
   height: number;
 }
 
 export type JobSummary = Omit<Job, "logs">;
-export type OutputSummary = Omit<PublishedOutput, "path">;
+export type OutputSummary = Omit<PublishedOutput, "path" | "cleanPath"> & {
+  hasClean?: boolean;
+};
 export interface AuthState {
   required: boolean;
   authenticated: boolean;

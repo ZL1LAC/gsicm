@@ -141,3 +141,64 @@ test("profile deletion preserves stitches and history and refuses deletion while
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("composite history serves each image and map-only export, and deletion removes its records", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "gsicm-history-"));
+  const { app, store } = await createApp(process.cwd(), root);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/outputs/map`;
+  try {
+    await mkdir(path.join(root, "outputs"));
+    const old = {
+      profileId: "map",
+      jobId: "old",
+      targetTime: "2026-01-01T00:00:00Z",
+      path: path.join(root, "outputs", "old.jpg"),
+      observations: [],
+    };
+    const current = {
+      ...old,
+      jobId: "new",
+      targetTime: "2026-01-01T01:00:00Z",
+      path: path.join(root, "outputs", "new.jpg"),
+      cleanPath: path.join(root, "outputs", "new.clean.jpg"),
+    };
+    await writeFile(old.path, "old image");
+    await writeFile(current.path, "attributed image");
+    await writeFile(current.cleanPath, "clean image");
+    store.put("outputHistory", old.jobId, old);
+    store.put("outputHistory", current.jobId, current);
+    store.put("outputs", "map", current);
+    const history = await (await fetch(`${base}/history`)).json();
+    assert.deepEqual(
+      history.map((item: { jobId: string }) => item.jobId),
+      ["old", "new"],
+    );
+    assert.equal(history[1].hasClean, true);
+    assert.equal(history[1].cleanPath, undefined);
+    assert.equal(
+      await (await fetch(`${base}/history/new?clean=1`)).text(),
+      "clean image",
+    );
+    assert.equal((await fetch(`${base}/history/old?clean=1`)).status, 404);
+    assert.equal(
+      (await fetch(`${base.replace("map", "other")}/history/new`)).status,
+      404,
+    );
+    assert.equal((await listFiles(store)).length, 2);
+    await deleteFile(store, "outputs", "new.jpg");
+    assert.equal(store.get("outputs", "map"), undefined);
+    assert.equal(store.get("outputHistory", "new"), undefined);
+    await assert.rejects(readFile(current.cleanPath));
+    assert.equal(
+      await (await fetch(`${base}/history/old`)).text(),
+      "old image",
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    store.db.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

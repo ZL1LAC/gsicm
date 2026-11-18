@@ -6,6 +6,7 @@ import type {
   Job,
   JobSummary,
   ManagerState,
+  OutputSummary,
   Profile,
   SourceRecord,
 } from "../shared/types";
@@ -19,6 +20,7 @@ import { JobLogs } from "./JobLogs";
 import { StitchProgress } from "./StitchProgress";
 import { ImageTools } from "./ImageTools";
 import { SettingsPage } from "./SettingsPage";
+import { CompositeViewer, observationAge } from "./CompositeViewer";
 import {
   Empty,
   FilterCount,
@@ -73,6 +75,10 @@ function App() {
       },
     };
   });
+  const [viewOutput, setViewOutput] = useState<{
+    output: OutputSummary;
+    name: string;
+  }>();
   const [page, setPage] = useState<Page>(readPage);
   const [expired, setExpired] = useState(false);
   const [password, setPassword] = useState("");
@@ -121,6 +127,20 @@ function App() {
   }, [manager.error]);
   const auth = manager.data?.auth;
   const state = manager.data?.state;
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navigation.current;
+    const selected = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !selected || nav.scrollWidth <= nav.clientWidth) return;
+    nav.scrollTo({
+      left:
+        nav.scrollLeft +
+        selected.getBoundingClientRect().left -
+        nav.getBoundingClientRect().left -
+        (nav.clientWidth - selected.offsetWidth) / 2,
+      behavior: "instant",
+    });
+  }, [page, !!state]);
   const activeCount = state?.jobs.filter(active).length ?? 0;
   useEffect(() => {
     document.title = `${activeCount ? `(${activeCount}) ` : ""}${page} · GSICM`;
@@ -472,7 +492,7 @@ function App() {
           </div>
         </a>
         <div className="nav-label">WORKSPACE</div>
-        <nav aria-label="Main navigation">
+        <nav ref={navigation} aria-label="Main navigation">
           {pages.map((name) => (
             <a
               href={`#${name.toLowerCase().replaceAll(" ", "-")}`}
@@ -648,11 +668,13 @@ function App() {
                         <article className="output-card panel" key={p.id}>
                           <div className={`image-area ${p.projection}`}>
                             {output ? (
-                              <a
-                                href={`/api/outputs/${encodeURIComponent(p.id)}?v=${output.jobId}-${encodeURIComponent(output.publishedAt)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-label={`Open ${p.name} image`}
+                              <button
+                                type="button"
+                                className="output-view-button"
+                                onClick={() =>
+                                  setViewOutput({ output, name: p.name })
+                                }
+                                aria-label={`View ${p.name} image`}
                               >
                                 <img
                                   src={`/api/outputs/${encodeURIComponent(p.id)}?v=${output.jobId}-${encodeURIComponent(output.publishedAt)}`}
@@ -661,7 +683,7 @@ function App() {
                                 <span className="image-open">
                                   Open full image ↗
                                 </span>
-                              </a>
+                              </button>
                             ) : (
                               <div className="image-placeholder">
                                 <div className="orbital-grid">
@@ -722,7 +744,11 @@ function App() {
                                   {output.observations.map((o) => (
                                     <p key={o.sourceId}>
                                       <strong>{o.satellite}</strong> ·{" "}
-                                      {date(o.time)}
+                                      {date(o.time)} ·{" "}
+                                      {observationAge(
+                                        output.targetTime,
+                                        o.time,
+                                      )}
                                       <br />
                                       {o.attribution}
                                     </p>
@@ -1415,6 +1441,13 @@ function App() {
             </button>
           </div>
         </Dialog>
+      )}
+      {viewOutput && (
+        <CompositeViewer
+          initial={viewOutput.output}
+          name={viewOutput.name}
+          onClose={() => setViewOutput(undefined)}
+        />
       )}
       {archiveSource && (
         <Dialog
